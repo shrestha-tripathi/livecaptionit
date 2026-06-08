@@ -15,5 +15,21 @@ export default defineConfig({
   site: siteUrl,
   vite: {
     plugins: [tailwindcss()],
+    // Mirror the production _headers COOP/COEP setup so SharedArrayBuffer
+    // (required for transformers.js multi-threaded WASM perf) works in dev
+    // too. Without this, `npm run dev` is single-threaded WASM — testing
+    // ends up slower than production and we'd miss perf regressions.
+    server: {
+      headers: {
+        "Cross-Origin-Opener-Policy": "same-origin",
+        "Cross-Origin-Embedder-Policy": "credentialless",
+      },
+    },
+    preview: {
+      headers: {
+        "Cross-Origin-Opener-Policy": "same-origin",
+        "Cross-Origin-Embedder-Policy": "credentialless",
+      },
+    },
   },
 });
