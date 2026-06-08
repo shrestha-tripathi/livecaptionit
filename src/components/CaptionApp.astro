@@ -1,0 +1,100 @@
+---
+/*
+  The actual capture UI. This is mostly an Astro shell of markup —
+  the orchestration logic lives in CaptionApp.script.ts.
+*/
+---
+
+<section
+  id="caption-app"
+  class="w-full max-w-3xl mx-auto px-4 sm:px-6"
+  data-state="idle"
+>
+  {/* ────────────── IDLE PANEL ────────────── */}
+  <div data-panel="idle" class="text-center py-8 sm:py-12">
+    <button
+      id="cp-start-btn"
+      type="button"
+      class="brand-halo inline-flex items-center gap-2.5 px-6 py-3.5 rounded-full text-base font-semibold bg-[var(--color-brand)] text-white hover:bg-[var(--color-brand-strong)] transition-colors shadow-line"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <polygon points="5,3 21,12 5,21" fill="currentColor" stroke="none" />
+      </svg>
+      Start captions
+    </button>
+    <p class="mt-3.5 text-xs text-[var(--color-fg-subtle)]">
+      Pick the tab or window whose audio you want captioned. Audio is processed locally — never uploads.
+    </p>
+    <div id="cp-support-warn" class="hidden mt-5 px-4 py-3 rounded-md bg-[var(--color-surface)] text-sm text-[var(--color-fg-muted)] shadow-line"></div>
+  </div>
+
+  {/* ────────────── LOADING PANEL ────────────── */}
+  <div data-panel="loading" class="hidden py-10 text-center">
+    <div class="inline-flex items-center gap-3 text-sm text-[var(--color-fg-muted)]">
+      <span class="size-2 rounded-full bg-[var(--color-brand)] rec-dot"></span>
+      <span id="cp-loading-msg">Preparing…</span>
+    </div>
+    <div class="mt-4 max-w-md mx-auto h-1 rounded-full bg-[var(--color-surface)] overflow-hidden">
+      <div id="cp-loading-bar" class="h-full bg-[var(--color-brand)] transition-all" style="width: 0%"></div>
+    </div>
+  </div>
+
+  {/* ────────────── ACTIVE PANEL ────────────── */}
+  <div data-panel="active" class="hidden">
+    {/* Mount point — caption box can be moved INTO PiP and back to here */}
+    <div id="cp-caption-mount">
+      <div id="cp-caption-box" class="cp-caption-box bg-[var(--color-surface)] rounded-xl px-5 py-4 shadow-line min-h-[180px] max-h-[300px] overflow-y-auto">
+        <header class="flex items-center justify-between gap-3 pb-3">
+          <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider">
+            <span class="size-2 rounded-full bg-[var(--color-rec)] rec-dot"></span>
+            <span style="color: var(--color-rec)">LIVE</span>
+            <span class="text-[var(--color-fg-subtle)] font-normal normal-case tracking-normal" id="cp-source-label"></span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <button
+              id="cp-pip-btn"
+              type="button"
+              class="text-[10px] uppercase tracking-wider font-semibold px-2.5 py-1 rounded-md bg-[var(--color-surface-strong)] hover:bg-[var(--color-brand)] hover:text-white transition-colors shadow-line"
+              title="Pop captions into a floating window"
+            >Pop out</button>
+            <button
+              id="cp-stop-btn"
+              type="button"
+              class="text-[10px] uppercase tracking-wider font-semibold px-2.5 py-1 rounded-md bg-[var(--color-surface-strong)] hover:bg-[var(--color-rec)] hover:text-white transition-colors shadow-line"
+              title="Stop captioning"
+            >Stop</button>
+          </div>
+        </header>
+        <div id="cp-caption-stream" class="caption-text text-[var(--color-fg)]">
+          <p class="text-[var(--color-fg-subtle)] text-sm italic">Listening… first caption usually appears within ~3 seconds.</p>
+        </div>
+      </div>
+    </div>
+    <p class="mt-3 text-xs text-[var(--color-fg-subtle)] text-center">
+      Captions appear ~3s after speech (Whisper chunk window). Each line = one transcription pass.
+    </p>
+  </div>
+
+  {/* ────────────── ERROR PANEL ────────────── */}
+  <div data-panel="error" class="hidden py-10 text-center">
+    <div class="inline-flex items-start gap-2 max-w-md text-left px-4 py-3 rounded-md bg-[var(--color-surface)] shadow-line">
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-rec)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 mt-0.5"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+      <div>
+        <p class="font-semibold text-sm" style="color: var(--color-rec)">Something went wrong</p>
+        <p id="cp-error-msg" class="mt-1 text-sm text-[var(--color-fg-muted)]"></p>
+      </div>
+    </div>
+    <button
+      id="cp-reset-btn"
+      type="button"
+      class="mt-4 text-xs uppercase tracking-wider font-semibold px-3 py-1.5 rounded-md bg-[var(--color-surface)] hover:bg-[var(--color-surface-strong)] transition-colors shadow-line"
+    >Try again</button>
+  </div>
+
+  {/* Hidden placeholder shown in MAIN page when caption box is currently inside PiP */}
+  <div id="cp-pip-placeholder" class="hidden py-8 text-center text-sm text-[var(--color-fg-subtle)] italic">
+    Captions are showing in the floating window. Close it to bring them back here.
+  </div>
+</section>
+
+<script src="./CaptionApp.script.ts"></script>

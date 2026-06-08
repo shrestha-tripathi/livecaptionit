@@ -1,0 +1,47 @@
+---
+// FOUC-free theme toggle. Reads localStorage on mount.
+---
+
+<button
+  id="theme-toggle"
+  type="button"
+  class="size-9 grid place-items-center rounded-md bg-[var(--color-surface)] hover:bg-[var(--color-surface-strong)] transition-colors shadow-line"
+  aria-label="Toggle theme"
+>
+  <svg id="theme-icon-light" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="hidden">
+    <circle cx="12" cy="12" r="4" />
+    <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+  </svg>
+  <svg id="theme-icon-dark" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="hidden">
+    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+  </svg>
+</button>
+
+<script is:inline>
+  (() => {
+    const btn = document.getElementById("theme-toggle");
+    const lightIcon = document.getElementById("theme-icon-light");
+    const darkIcon = document.getElementById("theme-icon-dark");
+    if (!btn || !lightIcon || !darkIcon) return;
+
+    const sync = () => {
+      const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+      // Show the icon for what you'll TOGGLE TO (so dark mode shows the sun)
+      darkIcon.classList.toggle("hidden", isDark);
+      lightIcon.classList.toggle("hidden", !isDark);
+    };
+    sync();
+    window.addEventListener("themechange", sync);
+
+    btn.addEventListener("click", () => {
+      const cur = document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
+      const next = cur === "dark" ? "light" : "dark";
+      if (next === "dark") document.documentElement.setAttribute("data-theme", "dark");
+      else document.documentElement.removeAttribute("data-theme");
+      try { localStorage.setItem("captionpip:theme", next); } catch (e) {}
+      const meta = document.getElementById("theme-color-meta");
+      if (meta) meta.setAttribute("content", next === "dark" ? "#0a0a0a" : "#ffffff");
+      window.dispatchEvent(new CustomEvent("themechange", { detail: { theme: next } }));
+    });
+  })();
+</script>

@@ -1,0 +1,16 @@
+---
+import Layout from "../layouts/Layout.astro";
+import { site, b } from "../site.config";
+---
+<Layout title="Page not found" noindex={true}>
+  <main class="max-w-3xl mx-auto px-4 sm:px-6 pt-16 pb-24 text-center">
+    <p class="text-[11px] uppercase tracking-wider font-semibold text-[var(--color-fg-subtle)]">404</p>
+    <h1 class="mt-3 text-4xl sm:text-5xl font-bold tracking-tight">We couldn't find that page</h1>
+    <p class="mt-4 text-[var(--color-fg-muted)]">It may have moved or never existed. Head back to the live captions.</p>
+    <div class="mt-8">
+      <a href={b("/")} class="inline-flex items-center px-5 py-2.5 rounded-full font-semibold text-sm bg-[var(--color-brand)] text-white hover:bg-[var(--color-brand-strong)] transition-colors">
+        Back to {site.name}
+      </a>
+    </div>
+  </main>
+</Layout>

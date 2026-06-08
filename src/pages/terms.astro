@@ -1,0 +1,35 @@
+---
+import Layout from "../layouts/Layout.astro";
+import { site } from "../site.config";
+const today = new Date().toISOString().slice(0, 10);
+---
+<Layout title="Terms of Use" description={`Terms of use for ${site.name}`}>
+  <main class="max-w-3xl mx-auto px-4 sm:px-6 pt-10 pb-16">
+    <h1 class="text-3xl font-bold tracking-tight">Terms of Use</h1>
+    <p class="mt-2 text-sm text-[var(--color-fg-subtle)]">Last updated: {today}</p>
+    <div class="mt-6 space-y-5 text-[var(--color-fg-muted)] text-[15px] leading-relaxed">
+      <p>By using <strong class="text-[var(--color-fg)]">{site.name}</strong> ("the service"), you agree to the following terms.</p>
+
+      <h2 class="text-lg font-semibold text-[var(--color-fg)] mt-8">1. Service description</h2>
+      <p>{site.name} is a free, browser-based live captioning tool. It runs the Whisper speech-recognition model directly in your browser and never uploads audio to remote servers.</p>
+
+      <h2 class="text-lg font-semibold text-[var(--color-fg)] mt-8">2. Acceptable use</h2>
+      <p>You agree to use {site.name} for lawful purposes only and not to caption audio you do not have the right to record or transcribe. You are responsible for complying with all applicable recording-consent and copyright laws in your jurisdiction.</p>
+
+      <h2 class="text-lg font-semibold text-[var(--color-fg)] mt-8">3. No warranty</h2>
+      <p>The service is provided "as is" without warranty of any kind. Caption accuracy depends on the source audio quality, your hardware, and the Whisper model's training. {site.name} is not a substitute for professional transcription where accuracy is legally required.</p>
+
+      <h2 class="text-lg font-semibold text-[var(--color-fg)] mt-8">4. Limitation of liability</h2>
+      <p>To the maximum extent permitted by law, {site.author} is not liable for any damages arising from your use of {site.name}, including but not limited to errors in transcription, missed words, or any decision made based on the captions.</p>
+
+      <h2 class="text-lg font-semibold text-[var(--color-fg)] mt-8">5. Open source</h2>
+      <p>{site.name} is open source. You can review the code at <a class="underline" href={site.githubUrl}>{site.githubUrl}</a>. Self-hosting and forks are permitted under the MIT license.</p>
+
+      <h2 class="text-lg font-semibold text-[var(--color-fg)] mt-8">6. Changes</h2>
+      <p>We may update these terms at any time. Material changes will be reflected in the "Last updated" date above.</p>
+
+      <h2 class="text-lg font-semibold text-[var(--color-fg)] mt-8">Contact</h2>
+      <p>Questions? <a class="underline" href={`mailto:${site.contactEmail}`}>{site.contactEmail}</a></p>
+    </div>
+  </main>
+</Layout>

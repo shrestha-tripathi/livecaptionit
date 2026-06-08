@@ -1,0 +1,54 @@
+# Cloudflare Pages _headers — applied to all routes.
+#
+# Mirrors the FTN + HEICPix + ScreenColorPicker pattern.
+#
+# Goal: prevent the *.pages.dev preview domain from getting indexed
+# (otherwise it competes with the real domain for SEO + dilutes link equity).
+# Combined with the canonical <link> in Layout.astro (which always points
+# at site.url = the .com domain), this fully de-prioritizes the preview
+# infra in SERPs.
+
+# ============================================================================
+# Noindex the .pages.dev infrastructure domain(s)
+# ============================================================================
+
+https://captionpip.pages.dev/*
+  X-Robots-Tag: noindex, nofollow
+
+https://*.captionpip.pages.dev/*
+  X-Robots-Tag: noindex, nofollow
+
+# ============================================================================
+# Security headers (production + previews)
+# ============================================================================
+
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: SAMEORIGIN
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), display-capture=(self), picture-in-picture=(self)
+  # COOP/COEP enable SharedArrayBuffer for transformers.js perf
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: credentialless
+
+# ============================================================================
+# Caching
+# ============================================================================
+
+# Hashed Astro assets — cache forever
+/_astro/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Favicon — cache 30 days
+/favicon.svg
+  Cache-Control: public, max-age=2592000
+
+# Whisper worker — cache 7 days (model itself is cached separately by browser IndexedDB)
+/whisper-worker.js
+  Cache-Control: public, max-age=604800
+
+# Sitemap & robots — short cache so SEO updates ship fast
+/sitemap.xml
+  Cache-Control: public, max-age=3600
+/robots.txt
+  Cache-Control: public, max-age=3600

@@ -1,0 +1,136 @@
+---
+import Layout from "../layouts/Layout.astro";
+import CaptionApp from "../components/CaptionApp.astro";
+import { site } from "../site.config";
+
+const faqJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: [
+    {
+      "@type": "Question",
+      name: "How is this different from Chrome's built-in Live Caption?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: `<p>Chrome's Live Caption is system-only — it doesn't float over other apps and can't show captions in a picture-in-picture window. ${site.name} pops the captions into a floating window that stays visible no matter which app you're using, and works on multiple operating systems (Chrome's Live Caption availability varies by OS).</p>`,
+      },
+    },
+    {
+      "@type": "Question",
+      name: "Does my audio get uploaded anywhere?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: `<p>No. ${site.name} runs the Whisper speech-recognition model directly in your browser via WebGPU and transformers.js. Audio is processed on your device and never sent to any server. The only network requests are the one-time download of the model file from Hugging Face Hub, cached locally afterward.</p>`,
+      },
+    },
+    {
+      "@type": "Question",
+      name: "Which browsers are supported?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: `<p>v0.1 needs Chrome, Edge, or Brave 116+ on desktop for the full experience (screen + audio capture, WebGPU, picture-in-picture). Firefox and Safari can show captions in-tab but can't pop out into a floating window. Mobile browsers don't support screen capture, so ${site.name} is desktop-only for now.</p>`,
+      },
+    },
+    {
+      "@type": "Question",
+      name: "Why is there a ~3-second delay before captions appear?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: `<p>Whisper transcribes audio in chunks. We use 3-second windows to balance latency against accuracy — smaller windows have less context and produce more errors. We may add a streaming mode in a future version that surfaces partial captions faster.</p>`,
+      },
+    },
+    {
+      "@type": "Question",
+      name: "Can it caption audio from a desktop app like Zoom or Spotify?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: `<p>On Windows: yes, if you pick "Entire screen" in the source picker and your browser is allowed to capture system audio (Chrome and Edge support this). On macOS and Linux, the browser can only capture audio from another browser tab — so use Zoom Web or Spotify Web instead. macOS users can install BlackHole (free virtual audio device) to route desktop app audio into the browser if needed.</p>`,
+      },
+    },
+  ],
+};
+---
+
+<Layout
+  title={`Live captions for any tab · picture-in-picture · runs offline`}
+  description={site.description}
+  jsonLd={[faqJsonLd]}
+>
+  <main class="pt-10 sm:pt-16 pb-16">
+    {/* ─── Hero ─── */}
+    <section class="max-w-3xl mx-auto px-4 sm:px-6 text-center">
+      <p class="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wider font-semibold px-2.5 py-1 rounded-full bg-[var(--color-brand-soft)] shadow-line" style="color: var(--color-brand-strong)">
+        <span class="size-1.5 rounded-full" style="background: var(--color-brand)"></span>
+        100% local · powered by WebGPU + Whisper
+      </p>
+      <h1 class="mt-5 text-4xl sm:text-5xl font-bold tracking-tight text-[var(--color-fg)]">
+        Live captions for any tab.<br />
+        <span class="text-[var(--color-fg-muted)]">Floats over anything.</span>
+      </h1>
+      <p class="mt-5 text-lg text-[var(--color-fg-muted)] max-w-xl mx-auto">
+        Caption a YouTube video, a podcast, a web meeting — anything your browser can hear. The captions pop into a floating window that stays on top no matter what app you switch to.
+      </p>
+    </section>
+
+    {/* ─── The actual tool ─── */}
+    <div class="mt-10 sm:mt-14">
+      <CaptionApp />
+    </div>
+
+    {/* ─── 3-step explainer ─── */}
+    <section class="mt-20 max-w-4xl mx-auto px-4 sm:px-6">
+      <h2 class="text-2xl font-bold tracking-tight text-center">How it works</h2>
+      <div class="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {[
+          { n: "1", title: "Pick the source", body: "Click Start, then choose the tab, window, or screen whose audio you want captioned. Don't forget to tick 'Share tab audio' on the picker." },
+          { n: "2", title: "Captions appear", body: "Whisper transcribes audio locally in your browser via WebGPU. First-time load downloads ~75 MB of model; second visit is instant." },
+          { n: "3", title: "Pop out to float", body: "Click 'Pop out' to move the captions into a floating window that stays on top while you switch apps. Close the window to bring them back." },
+        ].map((step) => (
+          <div class="bg-[var(--color-surface)] rounded-xl p-5 shadow-line">
+            <div class="size-7 grid place-items-center rounded-full font-bold text-xs" style="background: var(--color-brand); color: white">{step.n}</div>
+            <h3 class="mt-3 font-semibold text-[var(--color-fg)]">{step.title}</h3>
+            <p class="mt-1.5 text-sm text-[var(--color-fg-muted)]">{step.body}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+
+    {/* ─── Use cases ─── */}
+    <section class="mt-20 max-w-4xl mx-auto px-4 sm:px-6">
+      <h2 class="text-2xl font-bold tracking-tight text-center">When you'd use it</h2>
+      <div class="mt-8 grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { icon: "🎓", label: "Lectures & MOOCs" },
+          { icon: "💼", label: "Web meetings" },
+          { icon: "🎙️", label: "Podcasts" },
+          { icon: "🎥", label: "YouTube videos" },
+          { icon: "📺", label: "Live streams" },
+          { icon: "🌐", label: "Foreign content" },
+          { icon: "👂", label: "Hearing accessibility" },
+          { icon: "📚", label: "Studying / note-taking" },
+        ].map((u) => (
+          <div class="flex items-center gap-2.5 p-3 rounded-md bg-[var(--color-surface)] shadow-line">
+            <span class="text-lg" aria-hidden="true">{u.icon}</span>
+            <span class="text-sm text-[var(--color-fg-muted)]">{u.label}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+
+    {/* ─── FAQ ─── */}
+    <section class="mt-20 max-w-3xl mx-auto px-4 sm:px-6">
+      <h2 class="text-2xl font-bold tracking-tight">Frequently asked</h2>
+      <div class="mt-6 space-y-2">
+        {faqJsonLd.mainEntity.map((q) => (
+          <details class="group bg-[var(--color-surface)] rounded-md px-4 py-3 shadow-line">
+            <summary class="cursor-pointer font-semibold text-[var(--color-fg)] flex items-center justify-between gap-3">
+              <span>{q.name}</span>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" class="group-open:rotate-180 transition-transform"><polyline points="6 9 12 15 18 9" /></svg>
+            </summary>
+            <div class="mt-2 text-sm text-[var(--color-fg-muted)] [&_p]:mt-2 [&_p:first-child]:mt-0" set:html={q.acceptedAnswer.text}></div>
+          </details>
+        ))}
+      </div>
+    </section>
+  </main>
+</Layout>

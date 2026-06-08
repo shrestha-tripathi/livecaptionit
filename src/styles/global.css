@@ -1,0 +1,106 @@
+@import "tailwindcss";
+
+/*
+ * CaptionPip design tokens. Light default, dark via [data-theme="dark"].
+ * Cyan brand accent reserved for active/recording surfaces.
+ * Geist + Geist Mono via Google Fonts (loaded in Layout.astro).
+ */
+
+@theme {
+  /* Surfaces */
+  --color-bg: #ffffff;
+  --color-surface: #f5f5f5;
+  --color-surface-strong: #ebebeb;
+
+  /* Text */
+  --color-fg: #0a0a0a;
+  --color-fg-muted: #525252;
+  --color-fg-subtle: #737373;
+
+  /* Borders (via shadow-as-border, no border-* utilities used) */
+  --color-line: #e5e5e5;
+  --color-line-strong: #d4d4d4;
+
+  /* Brand accent — cyan, reserved for active/recording UI */
+  --color-brand: oklch(70% 0.14 200);
+  --color-brand-strong: oklch(60% 0.16 200);
+  --color-brand-soft: oklch(96% 0.04 200);
+  --color-brand-glow: oklch(70% 0.14 200 / 0.25);
+
+  /* Recording red — for the LIVE indicator */
+  --color-rec: oklch(60% 0.22 25);
+
+  /* Type */
+  --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+[data-theme="dark"] {
+  --color-bg: #0a0a0a;
+  --color-surface: #151515;
+  --color-surface-strong: #1e1e1e;
+
+  --color-fg: #fafafa;
+  --color-fg-muted: #a3a3a3;
+  --color-fg-subtle: #737373;
+
+  --color-line: #262626;
+  --color-line-strong: #404040;
+
+  --color-brand: oklch(78% 0.14 200);
+  --color-brand-strong: oklch(85% 0.15 200);
+  --color-brand-soft: oklch(20% 0.08 200);
+  --color-brand-glow: oklch(78% 0.14 200 / 0.30);
+
+  --color-rec: oklch(70% 0.22 25);
+}
+
+/* Base layer — minimal, no reset opinions */
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Caption text — monospace for streaming-text feel */
+.caption-text {
+  font-family: var(--font-mono);
+  font-size: 1.05rem;
+  line-height: 1.6;
+  letter-spacing: -0.01em;
+}
+
+/* "LIVE" pulsing dot */
+@keyframes pulse-rec {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.85); }
+}
+.rec-dot {
+  animation: pulse-rec 1.2s ease-in-out infinite;
+}
+
+/* Brand glow halo for the start button when idle */
+@keyframes brand-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 var(--color-brand-glow); }
+  50% { box-shadow: 0 0 0 12px transparent; }
+}
+.brand-halo {
+  animation: brand-pulse 2.4s ease-in-out infinite;
+}
+
+/* Shadow-as-border utility */
+.shadow-line {
+  box-shadow: inset 0 0 0 1px var(--color-line);
+}
+.shadow-line-strong {
+  box-shadow: inset 0 0 0 1px var(--color-line-strong);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rec-dot, .brand-halo { animation: none; }
+  html { scroll-behavior: auto; }
+}

@@ -1,0 +1,29 @@
+---
+import Layout from "../layouts/Layout.astro";
+import { site } from "../site.config";
+---
+<Layout title="Disclaimer" description={`Disclaimer for ${site.name}`}>
+  <main class="max-w-3xl mx-auto px-4 sm:px-6 pt-10 pb-16">
+    <h1 class="text-3xl font-bold tracking-tight">Disclaimer</h1>
+    <div class="mt-6 space-y-5 text-[var(--color-fg-muted)] text-[15px] leading-relaxed">
+      <p>
+        <strong class="text-[var(--color-fg)]">{site.name}</strong> generates captions using machine-learning models. Caption accuracy is best-effort and depends on:
+      </p>
+      <ul class="list-disc pl-5 space-y-2">
+        <li>The quality of the source audio (background noise, codec, sample rate)</li>
+        <li>The speaker's accent, speed, and clarity</li>
+        <li>The language and vocabulary in use</li>
+        <li>Your device's compute capability</li>
+      </ul>
+      <p>
+        <strong class="text-[var(--color-fg)]">Do not rely on {site.name} captions for any purpose where accuracy is legally or financially material</strong> — including but not limited to legal proceedings, medical decisions, regulatory filings, or news quotation. For such use cases, engage a professional transcription service with human review.
+      </p>
+      <p>
+        {site.name} is provided as a convenience and as a demonstration of in-browser AI capabilities. Use at your own risk.
+      </p>
+      <p>
+        {site.name} is not affiliated with OpenAI, Google, Hugging Face, or any speech-recognition vendor. "Whisper" is a model architecture released by OpenAI; we use the open-source weights via the transformers.js project.
+      </p>
+    </div>
+  </main>
+</Layout>

@@ -1,0 +1,42 @@
+---
+import Layout from "../layouts/Layout.astro";
+import { site } from "../site.config";
+const today = new Date().toISOString().slice(0, 10);
+---
+<Layout title="Privacy Policy" description={`Privacy policy for ${site.name}`}>
+  <main class="max-w-3xl mx-auto px-4 sm:px-6 pt-10 pb-16">
+    <h1 class="text-3xl font-bold tracking-tight">Privacy Policy</h1>
+    <p class="mt-2 text-sm text-[var(--color-fg-subtle)]">Last updated: {today}</p>
+
+    <div class="mt-6 space-y-5 text-[var(--color-fg-muted)] text-[15px] leading-relaxed">
+      <p>
+        <strong class="text-[var(--color-fg)]">{site.name}</strong> is a single-page web app that runs entirely in your browser. We take privacy seriously — the product itself is built around the principle that your data should never leave your device.
+      </p>
+
+      <h2 class="text-lg font-semibold text-[var(--color-fg)] mt-8">What data we process</h2>
+      <ul class="list-disc pl-5 space-y-2">
+        <li><strong class="text-[var(--color-fg)]">Audio</strong> from the source you pick (a browser tab, window, or screen). This audio is processed locally in your browser by the Whisper speech-recognition model. <strong>It is never sent to our servers or any third party.</strong> When you stop captioning, the audio stream ends and nothing is retained.</li>
+        <li><strong class="text-[var(--color-fg)]">Transcribed text</strong> appears in your browser only. We do not store, log, or transmit transcripts.</li>
+        <li><strong class="text-[var(--color-fg)]">Theme preference</strong> is saved in your browser's localStorage so the page remembers light or dark next visit. This data stays on your device.</li>
+      </ul>
+
+      <h2 class="text-lg font-semibold text-[var(--color-fg)] mt-8">Third-party requests</h2>
+      <ul class="list-disc pl-5 space-y-2">
+        <li><strong class="text-[var(--color-fg)]">Hugging Face Hub</strong> — the first time you use {site.name}, your browser downloads the Whisper model file from Hugging Face's CDN. Subsequent visits use the browser cache. Hugging Face will see your IP address as part of standard HTTP request logging.</li>
+        <li><strong class="text-[var(--color-fg)]">Google Fonts</strong> — we use Geist + Geist Mono served from Google Fonts. Google receives standard HTTP request data (IP, user agent, referrer).</li>
+        {site.gaId && (
+          <li><strong class="text-[var(--color-fg)]">Google Analytics</strong> — we use GA4 to count anonymous page views. No personal data is collected. GA respects Do-Not-Track when set.</li>
+        )}
+      </ul>
+
+      <h2 class="text-lg font-semibold text-[var(--color-fg)] mt-8">Cookies</h2>
+      <p>{site.name} does not set any first-party cookies. The site uses browser localStorage (not cookies) only for theme preference. Any cookies you may see in your browser come from third-party services listed above (analytics, fonts).</p>
+
+      <h2 class="text-lg font-semibold text-[var(--color-fg)] mt-8">Your rights</h2>
+      <p>Because {site.name} doesn't have user accounts and doesn't collect personal data, there's no account to delete, no profile to download, no opt-outs to manage. If you're concerned about third-party requests, you can block them at your browser or network level — {site.name}'s core captioning still works offline after the model has been cached.</p>
+
+      <h2 class="text-lg font-semibold text-[var(--color-fg)] mt-8">Contact</h2>
+      <p>Questions about this policy? Email <a class="underline" href={`mailto:${site.contactEmail}`}>{site.contactEmail}</a>. {site.name} is operated from {site.jurisdiction}.</p>
+    </div>
+  </main>
+</Layout>

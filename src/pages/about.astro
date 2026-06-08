@@ -1,0 +1,23 @@
+---
+import Layout from "../layouts/Layout.astro";
+import { site } from "../site.config";
+---
+<Layout title="About" description={`About ${site.name} — built by ${site.author}`}>
+  <main class="max-w-3xl mx-auto px-4 sm:px-6 pt-10 pb-16">
+    <h1 class="text-3xl font-bold tracking-tight">About</h1>
+    <div class="mt-6 space-y-5 text-[var(--color-fg-muted)] text-[15px] leading-relaxed">
+      <p>
+        <strong class="text-[var(--color-fg)]">{site.name}</strong> is a free, browser-only live captions tool. Pick any audio source your browser can hear — a YouTube tab, a Spotify track, a Google Meet call, a podcast — and {site.name} shows live captions in a floating window that stays visible while you switch between apps.
+      </p>
+      <p>
+        It runs the <a href="https://huggingface.co/openai/whisper" class="underline">Whisper</a> speech recognition model directly in your browser via <a href="https://huggingface.co/docs/transformers.js" class="underline">transformers.js</a> + WebGPU. Audio is processed locally and <strong class="text-[var(--color-fg)]">never uploaded to any server</strong>. The only network requests are the one-time model download from Hugging Face Hub (cached after first use).
+      </p>
+      <p>
+        Built by <a href={site.githubUrl} class="underline">{site.author}</a> as part of a portfolio of in-browser AI tools at <a href="https://worksoffline.in" class="underline">worksoffline.in</a>. The product principle: <em>your data should never leave your device.</em>
+      </p>
+      <p>
+        Questions, bugs, or feature requests? <a href="/contact" class="underline">Get in touch</a>.
+      </p>
+    </div>
+  </main>
+</Layout>
