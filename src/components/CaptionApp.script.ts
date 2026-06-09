@@ -45,6 +45,9 @@ const MAX_CAPTION_LINES = 4; // visible committed paragraphs in the history (old
 const MAX_LINE_WORDS = 12; // committed words per paragraph before starting a new one
 const MAX_TICK_MS = 2000; // hard cap on adaptive tick interval
 const FORCE_COMMIT_KEEP_SECONDS = 2; // keep this much trailing audio after force-commit
+const SILENCE_RMS_THRESHOLD = 0.005; // below this = treated as silence (skip transcription)
+const SILENCE_RESET_SECONDS = 2.5; // sustained silence longer than this → wipe buffer + agreement (kills Whisper hallucinations)
+const HALLUCINATION_MAX_REPEAT = 4; // drop tick output where the same word repeats this many times consecutively
 const INLINE_PREF_KEY = "captionpip:inline-pref";
 const PIP_PREFS_KEY = "captionpip:pip-prefs";
 
@@ -132,6 +135,10 @@ function clamp(n: number, lo: number, hi: number) {
   let tickTimer: number | null = null;
   let inFlight = false;
   let nextTickMs = TICK_INTERVAL_MS;
+  // Silence tracking — RMS samples come from the capture's onLevel callback.
+  // We keep a sliding window of recent RMS values to know "how long has it
+  // been quiet?" so we can prevent Whisper from hallucinating on silent audio.
+  let lastNonSilentMs = 0;
 
   // ── Initial support detection ──
   const support = detectSupport();
@@ -362,12 +369,47 @@ function clamp(n: number, lo: number, hi: number) {
     }, nextTickMs);
   }
 
+  /** Detect Whisper hallucinations on silent input (e.g. "you you you you you").
+   *  Returns true if the text contains a run of HALLUCINATION_MAX_REPEAT or more
+   *  identical consecutive words. */
+  function looksHallucinated(text: string): boolean {
+    const tokens = text.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (tokens.length < HALLUCINATION_MAX_REPEAT) return false;
+    let run = 1;
+    for (let i = 1; i < tokens.length; i++) {
+      if (tokens[i] === tokens[i - 1]) {
+        run++;
+        if (run >= HALLUCINATION_MAX_REPEAT) return true;
+      } else {
+        run = 1;
+      }
+    }
+    return false;
+  }
+
   async function tick() {
     if (!whisper || !whisperReady || inFlight) {
       scheduleNextTick();
       return;
     }
     if (rolling.durationSeconds() < MIN_AUDIO_SECONDS) {
+      scheduleNextTick();
+      return;
+    }
+
+    // ── Silence guard ──
+    // If audio has been quiet for SILENCE_RESET_SECONDS, nuke the buffer,
+    // clear any pending live line, and skip this tick. Otherwise Whisper
+    // will confidently hallucinate "you you you you you" / "thanks for
+    // watching" / silence-token chains on the trailing silence. This is
+    // the actual source of the post-stop / post-pause garbage output.
+    const silenceMs = performance.now() - lastNonSilentMs;
+    if (silenceMs > SILENCE_RESET_SECONDS * 1000) {
+      if (rolling.length() > 0) {
+        rolling.reset();
+        agreement.reset();
+        renderLiveLine("");
+      }
       scheduleNextTick();
       return;
     }
@@ -386,7 +428,8 @@ function clamp(n: number, lo: number, hi: number) {
         Math.max(TICK_INTERVAL_MS, Math.ceil(durationMs * 1.2)),
       );
 
-      if (text) {
+      // Drop obvious hallucinations (repeated-word runs).
+      if (text && !looksHallucinated(text)) {
         agreement.ingest(text);
         if (agreement.newlyCommitted.length > 0) {
           appendCommittedWords(agreement.newlyCommitted);
@@ -401,7 +444,9 @@ function clamp(n: number, lo: number, hi: number) {
       // and we don't get a perceptible gap before captions resume).
       if (audioWasOverCap) {
         const liveTokens = agreement.liveLine.trim().split(/\s+/).filter(Boolean);
-        if (liveTokens.length > 0) appendCommittedWords(liveTokens);
+        if (liveTokens.length > 0 && !looksHallucinated(agreement.liveLine)) {
+          appendCommittedWords(liveTokens);
+        }
         agreement.reset();
         // Trim everything EXCEPT the trailing FORCE_COMMIT_KEEP_SECONDS so
         // the next tick has context to transcribe instead of silence-starting.
@@ -434,6 +479,10 @@ function clamp(n: number, lo: number, hi: number) {
     rolling.reset();
     agreement.reset();
     nextTickMs = TICK_INTERVAL_MS;
+    // Treat the moment Start was clicked as "fresh audio incoming" so the
+    // silence-reset guard doesn't fire on the first tick before any RMS
+    // callbacks have come in.
+    lastNonSilentMs = performance.now();
     captionStream.innerHTML = "";
 
     const usePip = isPipSupported() && !inlineToggle.checked;
@@ -492,6 +541,12 @@ function clamp(n: number, lo: number, hi: number) {
     try {
       captureHandle = await startCapture({
         onAudio: (samples) => rolling.append(samples),
+        onLevel: (rms) => {
+          // RMS callback fires ~10Hz from audioCapture. Record the last
+          // time the input was above the silence floor so tick() can
+          // decide whether to skip transcription / reset state.
+          if (rms > SILENCE_RMS_THRESHOLD) lastNonSilentMs = performance.now();
+        },
         onError: (err) => showError(err.message),
         onSourceEnded: () => {
           stopPipeline("Source ended.");
