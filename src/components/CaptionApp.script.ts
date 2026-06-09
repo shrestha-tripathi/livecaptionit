@@ -536,13 +536,22 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
    *  Elements with `data-when="live"` / `data-when="stopped"` toggle visibility
    *  via the `.hidden` class — covers the LIVE/STOPPED indicators, the Stop
    *  button label swap (Stop → Done), Pop Out (hidden when stopped), and
-   *  the "Start new" button (only visible when stopped). */
+   *  the "Start new" button (only visible when stopped).
+   *
+   *  IMPORTANT: query from `document`, NOT `rootEl`. The caption-box header
+   *  (which contains most of the `data-when` elements) gets physically moved
+   *  into the Document PiP window via appendChild while PiP is open, so it's
+   *  no longer a descendant of rootEl during a live session. Querying rootEl
+   *  would silently match zero elements and leave the previous stopped/live
+   *  indicators stuck on whatever they were before PiP opened. This caused
+   *  the v0.3.1 regression where "Start new → Start" left the STOPPED label
+   *  showing inside PiP. */
   type Substate = "live" | "stopped";
   let currentSubstate: Substate = "live";
   function setSubstate(s: Substate) {
     currentSubstate = s;
     rootEl.dataset.substate = s;
-    rootEl.querySelectorAll<HTMLElement>("[data-when]").forEach((el) => {
+    document.querySelectorAll<HTMLElement>("[data-when]").forEach((el) => {
       el.classList.toggle("hidden", el.dataset.when !== s);
     });
   }
@@ -794,6 +803,11 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
    */
   async function startPipeline() {
     setState("loading");
+    // Flip substate IMMEDIATELY — if a previous session left us in
+    // "stopped" substate (Stop → Done → Start new), the caption-box
+    // header still has STOPPED + Done labels visible. Flip back to
+    // "live" before opening PiP so the moment-of-PiP-open is clean.
+    setSubstate("live");
     showLoading("Opening floating window…");
 
     // Reset all streaming state from any previous run
