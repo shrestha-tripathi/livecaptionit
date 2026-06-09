@@ -34,7 +34,15 @@ import {
   MIN_AUDIO_SECONDS,
   type CaptureHandle,
 } from "../lib/audioCapture";
-import { createWhisperClient, type WhisperClient } from "../lib/whisperClient";
+import {
+  createWhisperClient,
+  AVAILABLE_MODELS,
+  DEFAULT_MODEL_ID,
+  modelById,
+  isModelCached,
+  type WhisperClient,
+  type ModelSpec,
+} from "../lib/whisperClient";
 import { openPip, isPipSupported, type PipHandle } from "../lib/pipClient";
 import { detectSupport } from "../lib/browserSupport";
 import { Agreement } from "../lib/agreement";
@@ -50,6 +58,20 @@ const SILENCE_RESET_SECONDS = 2.5; // sustained silence longer than this → wip
 const HALLUCINATION_MAX_REPEAT = 4; // drop tick output where the same word repeats this many times consecutively
 const INLINE_PREF_KEY = "captionpip:inline-pref";
 const PIP_PREFS_KEY = "captionpip:pip-prefs";
+const MODEL_PREF_KEY = "captionpip:model-pref";
+
+function loadModelPref(): ModelSpec["id"] {
+  try {
+    const raw = localStorage.getItem(MODEL_PREF_KEY);
+    if (raw === "tiny" || raw === "base" || raw === "small") return raw;
+  } catch {}
+  return DEFAULT_MODEL_ID;
+}
+function saveModelPref(id: ModelSpec["id"]) {
+  try {
+    localStorage.setItem(MODEL_PREF_KEY, id);
+  } catch {}
+}
 
 interface PipPrefs {
   /** Width as percentage of screen.width (1–100). */
@@ -138,6 +160,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
   const prefHeightVal = rootEl.querySelector<HTMLSpanElement>("#cp-pref-height-val")!;
   const prefPixels = rootEl.querySelector<HTMLParagraphElement>("#cp-pref-pixels")!;
   const prefResetBtn = rootEl.querySelector<HTMLButtonElement>("#cp-pref-reset")!;
+  const modelList = rootEl.querySelector<HTMLDivElement>("#cp-model-list")!;
 
   // ── Lifecycle state ──
   let captureHandle: CaptureHandle | null = null;
@@ -218,6 +241,65 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     savePipPrefs(pipPrefs);
     renderPrefsUI();
   });
+
+  // ── Model picker: render the radio list with size + cache indicators ──
+  //   Cache check is async → render once synchronously (no checks), then
+  //   re-render after the cache probes resolve so the indicators light up.
+  let selectedModelId: ModelSpec["id"] = loadModelPref();
+  let modelCacheStatus: Record<string, boolean> = {};
+  function renderModelList() {
+    modelList.innerHTML = "";
+    for (const m of AVAILABLE_MODELS) {
+      const isSelected = m.id === selectedModelId;
+      const isCached = modelCacheStatus[m.hfId] === true;
+      const item = document.createElement("label");
+      item.className =
+        "flex items-start gap-3 px-2 py-2 rounded-md cursor-pointer transition-colors " +
+        (isSelected
+          ? "bg-[var(--color-brand-soft)]"
+          : "hover:bg-[var(--color-surface-strong)]");
+      item.innerHTML = `
+        <input
+          type="radio"
+          name="cp-model"
+          value="${m.id}"
+          class="mt-1 accent-[var(--color-brand)] cursor-pointer"
+          ${isSelected ? "checked" : ""}
+        />
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 text-sm font-semibold text-[var(--color-fg)]">
+            <span>${m.label}</span>
+            <span class="font-normal text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded ${
+              isCached
+                ? "bg-[var(--color-brand-soft)] text-[var(--color-brand-strong)]"
+                : "bg-[var(--color-surface-strong)] text-[var(--color-fg-muted)]"
+            }">
+              ${isCached ? `✓ ${m.sizeMb} MB cached` : `↓ ${m.sizeMb} MB download`}
+            </span>
+          </div>
+          <p class="mt-0.5 text-xs text-[var(--color-fg-muted)] leading-snug">${m.hint}</p>
+        </div>
+      `;
+      const radio = item.querySelector<HTMLInputElement>("input")!;
+      radio.addEventListener("change", () => {
+        if (radio.checked) {
+          selectedModelId = m.id;
+          saveModelPref(m.id);
+          renderModelList(); // refresh selected highlight
+        }
+      });
+      modelList.appendChild(item);
+    }
+  }
+  renderModelList();
+  // Probe cache status in parallel, then re-render to light up indicators
+  (async () => {
+    const results = await Promise.all(
+      AVAILABLE_MODELS.map(async (m) => [m.hfId, await isModelCached(m.hfId)] as const),
+    );
+    for (const [hfId, cached] of results) modelCacheStatus[hfId] = cached;
+    renderModelList();
+  })();
 
   /**
    * Single source of truth for "is the caption box currently inside PiP?".
@@ -563,7 +645,11 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
           break;
       }
     });
-    const initPromise = whisper.init().catch((e) => {
+    // Resolve user's model preference to its HF ID + pass to worker init.
+    // Re-read pref at start time so changes made in the prefs panel since
+    // the page loaded take effect on this run.
+    const activeModel = modelById(loadModelPref());
+    const initPromise = whisper.init(activeModel.hfId).catch((e) => {
       showError(`Couldn't load Whisper: ${(e as Error).message}`);
     });
 

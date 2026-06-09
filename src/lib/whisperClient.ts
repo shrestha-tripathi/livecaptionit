@@ -25,6 +25,85 @@ export interface WhisperClient {
   onStatus: (cb: (s: WhisperStatus) => void) => void;
 }
 
+// ────────────────────────────────────────────────────────────────────────
+// Model catalog
+// ────────────────────────────────────────────────────────────────────────
+
+export interface ModelSpec {
+  /** Short key used in UI + localStorage. */
+  id: "tiny" | "base" | "small";
+  /** User-facing label (capitalised). */
+  label: string;
+  /** Hugging Face model ID. ALL must be onnx-community/* so dtype variants
+   *  exist for our WebGPU encoder=fp32 / decoder=q4 config. Using the
+   *  Xenova/* port silently hangs (see captionpip-project skill notes). */
+  hfId: string;
+  /** Approximate download size — shown in UI to set expectations. */
+  sizeMb: number;
+  /** Relative speed multiplier vs base (1.0). Higher = faster. */
+  relSpeed: number;
+  /** One-line UX hint. */
+  hint: string;
+}
+
+export const AVAILABLE_MODELS: ModelSpec[] = [
+  {
+    id: "tiny",
+    label: "Tiny",
+    hfId: "onnx-community/whisper-tiny",
+    sizeMb: 39,
+    relSpeed: 2.0,
+    hint: "Fastest. Lowest accuracy — best for clean English.",
+  },
+  {
+    id: "base",
+    label: "Base",
+    hfId: "onnx-community/whisper-base",
+    sizeMb: 74,
+    relSpeed: 1.0,
+    hint: "Default. Balanced speed and accuracy.",
+  },
+  {
+    id: "small",
+    label: "Small",
+    hfId: "onnx-community/whisper-small",
+    sizeMb: 244,
+    relSpeed: 0.5,
+    hint: "Best accuracy. Slower + bigger first-time download.",
+  },
+];
+
+export const DEFAULT_MODEL_ID: ModelSpec["id"] = "base";
+
+export function modelById(id: string): ModelSpec {
+  return AVAILABLE_MODELS.find((m) => m.id === id) || AVAILABLE_MODELS[1];
+}
+
+/**
+ * Best-effort check: is this model's primary weight file already cached
+ * in the browser's Cache Storage by transformers.js? Cheap (no network),
+ * lets us mark "✓ ready" vs "⬇ N MB" in the picker. False negatives are
+ * fine — worst case the user sees the download bar they'd have seen anyway.
+ *
+ * transformers.js v3 caches under the "transformers-cache" Cache name,
+ * with keys like:
+ *   https://huggingface.co/{hfId}/resolve/main/onnx/encoder_model.onnx
+ * We probe for the encoder_model file specifically — if that exists, the
+ * model is effectively cached (decoder + tokenizer come together in our
+ * pipeline call).
+ */
+export async function isModelCached(hfId: string): Promise<boolean> {
+  if (typeof caches === "undefined") return false;
+  try {
+    const cache = await caches.open("transformers-cache");
+    const probe = `https://huggingface.co/${hfId}/resolve/main/onnx/encoder_model.onnx`;
+    const hit = await cache.match(probe);
+    return !!hit;
+  } catch {
+    return false;
+  }
+}
+
 let _nextId = 1;
 
 export function createWhisperClient(workerUrl = "/whisper-worker.js"): WhisperClient {
