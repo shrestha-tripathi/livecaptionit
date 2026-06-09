@@ -93,12 +93,22 @@
         </div>
 
         <div id="cp-caption-stream" class="caption-text text-[var(--color-fg)]">
-          <p class="text-[var(--color-fg-subtle)] text-sm italic">Listening… first caption usually appears within ~3 seconds.</p>
+          <p class="text-[var(--color-fg-subtle)] text-sm italic">Listening… first word usually appears within ~1 second.</p>
         </div>
+
+        {/* Live (uncommitted) line — refreshes in-place every tick.
+            Muted color + italic signals "draft / still refining".
+            aria-live='polite' lets screen-reader users get the real-time-feel. */}
+        <p
+          id="cp-caption-live"
+          class="caption-text text-[var(--color-fg-muted)] italic mt-2 hidden"
+          aria-live="polite"
+          aria-atomic="true"
+        ></p>
       </div>
     </div>
     <p class="mt-3 text-xs text-[var(--color-fg-subtle)] text-center">
-      Captions appear ~3s after speech (Whisper chunk window). Each line = one transcription pass.
+      Italic line = best guess so far. Plain lines above = confirmed.
     </p>
   </div>
 
