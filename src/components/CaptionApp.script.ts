@@ -59,6 +59,50 @@ const HALLUCINATION_MAX_REPEAT = 4; // drop tick output where the same word repe
 const INLINE_PREF_KEY = "captionpip:inline-pref";
 const PIP_PREFS_KEY = "captionpip:pip-prefs";
 const MODEL_PREF_KEY = "captionpip:model-pref";
+const CAPTION_STYLE_KEY = "captionpip:caption-style";
+
+interface CaptionStyle {
+  /** Font size scale (0.8 – 2.0). */
+  fontScale: number;
+  /** Base font weight (400/500/600). Confirmed words auto-bump +300. */
+  fontWeight: 400 | 500 | 600;
+  /** Vertical alignment of content within the caption box. */
+  position: "top" | "middle" | "bottom";
+  /** Whether to apply text-shadow (boosts legibility over bright video). */
+  textShadow: boolean;
+}
+const CAPTION_STYLE_DEFAULTS: CaptionStyle = {
+  fontScale: 1,
+  fontWeight: 400,
+  position: "top",
+  textShadow: true,
+};
+function loadCaptionStyle(): CaptionStyle {
+  try {
+    const raw = localStorage.getItem(CAPTION_STYLE_KEY);
+    if (!raw) return { ...CAPTION_STYLE_DEFAULTS };
+    const parsed = JSON.parse(raw);
+    const fontWeight = parsed.fontWeight === 500 || parsed.fontWeight === 600
+      ? parsed.fontWeight
+      : 400;
+    const position = parsed.position === "middle" || parsed.position === "bottom"
+      ? parsed.position
+      : "top";
+    return {
+      fontScale: clamp(Number(parsed.fontScale) || CAPTION_STYLE_DEFAULTS.fontScale, 0.8, 2.0),
+      fontWeight,
+      position,
+      textShadow: parsed.textShadow !== false, // default true
+    };
+  } catch {
+    return { ...CAPTION_STYLE_DEFAULTS };
+  }
+}
+function saveCaptionStyle(s: CaptionStyle) {
+  try {
+    localStorage.setItem(CAPTION_STYLE_KEY, JSON.stringify(s));
+  } catch {}
+}
 
 function loadModelPref(): ModelSpec["id"] {
   try {
@@ -161,6 +205,10 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
   const prefPixels = rootEl.querySelector<HTMLParagraphElement>("#cp-pref-pixels")!;
   const prefResetBtn = rootEl.querySelector<HTMLButtonElement>("#cp-pref-reset")!;
   const modelList = rootEl.querySelector<HTMLDivElement>("#cp-model-list")!;
+  const styleFontScale = rootEl.querySelector<HTMLInputElement>("#cp-style-fontscale")!;
+  const styleFontScaleVal = rootEl.querySelector<HTMLSpanElement>("#cp-style-fontscale-val")!;
+  const styleShadow = rootEl.querySelector<HTMLInputElement>("#cp-style-shadow")!;
+  const styleResetBtn = rootEl.querySelector<HTMLButtonElement>("#cp-style-reset")!;
 
   // ── Lifecycle state ──
   let captureHandle: CaptureHandle | null = null;
@@ -300,6 +348,87 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     for (const [hfId, cached] of results) modelCacheStatus[hfId] = cached;
     renderModelList();
   })();
+
+  // ── Caption style prefs: drive CSS custom properties on the caption box
+  //    so changes apply LIVE to both inline and PiP rendering. Position
+  //    swaps a utility class for flex alignment. ──
+  let captionStyle: CaptionStyle = loadCaptionStyle();
+  function applyCaptionStyle(s: CaptionStyle) {
+    captionBox.style.setProperty("--caption-font-scale", String(s.fontScale));
+    captionBox.style.setProperty("--caption-font-weight", String(s.fontWeight));
+    captionBox.style.setProperty(
+      "--caption-text-shadow",
+      s.textShadow
+        ? "0 1px 3px rgba(0, 0, 0, 0.45), 0 0 6px rgba(0, 0, 0, 0.25)"
+        : "none",
+    );
+    captionStream.classList.remove(
+      "caption-position-top",
+      "caption-position-middle",
+      "caption-position-bottom",
+    );
+    captionStream.classList.add(`caption-position-${s.position}`);
+  }
+  function renderStyleUI() {
+    styleFontScale.value = String(Math.round(captionStyle.fontScale * 100));
+    styleFontScaleVal.textContent = `${Math.round(captionStyle.fontScale * 100)}%`;
+    styleShadow.checked = captionStyle.textShadow;
+    // Reset radio checked state to match current captionStyle
+    rootEl
+      .querySelectorAll<HTMLInputElement>('input[name="cp-style-fontweight"]')
+      .forEach((r) => (r.checked = Number(r.value) === captionStyle.fontWeight));
+    rootEl
+      .querySelectorAll<HTMLInputElement>('input[name="cp-style-position"]')
+      .forEach((r) => (r.checked = r.value === captionStyle.position));
+  }
+  // Initial: apply saved style + sync UI to it
+  renderStyleUI();
+  applyCaptionStyle(captionStyle);
+
+  // Wire live updates
+  styleFontScale.addEventListener("input", () => {
+    captionStyle.fontScale = clamp(Number(styleFontScale.value) / 100, 0.8, 2.0);
+    styleFontScaleVal.textContent = `${Math.round(captionStyle.fontScale * 100)}%`;
+    applyCaptionStyle(captionStyle);
+    saveCaptionStyle(captionStyle);
+  });
+  rootEl
+    .querySelectorAll<HTMLInputElement>('input[name="cp-style-fontweight"]')
+    .forEach((r) => {
+      r.addEventListener("change", () => {
+        if (!r.checked) return;
+        const v = Number(r.value);
+        if (v === 400 || v === 500 || v === 600) {
+          captionStyle.fontWeight = v;
+          applyCaptionStyle(captionStyle);
+          saveCaptionStyle(captionStyle);
+        }
+      });
+    });
+  rootEl
+    .querySelectorAll<HTMLInputElement>('input[name="cp-style-position"]')
+    .forEach((r) => {
+      r.addEventListener("change", () => {
+        if (!r.checked) return;
+        const v = r.value;
+        if (v === "top" || v === "middle" || v === "bottom") {
+          captionStyle.position = v;
+          applyCaptionStyle(captionStyle);
+          saveCaptionStyle(captionStyle);
+        }
+      });
+    });
+  styleShadow.addEventListener("change", () => {
+    captionStyle.textShadow = styleShadow.checked;
+    applyCaptionStyle(captionStyle);
+    saveCaptionStyle(captionStyle);
+  });
+  styleResetBtn.addEventListener("click", () => {
+    captionStyle = { ...CAPTION_STYLE_DEFAULTS };
+    saveCaptionStyle(captionStyle);
+    renderStyleUI();
+    applyCaptionStyle(captionStyle);
+  });
 
   /**
    * Single source of truth for "is the caption box currently inside PiP?".

@@ -66,12 +66,67 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Caption text — monospace for streaming-text feel */
+/* Caption text — monospace for streaming-text feel.
+ * v0.2.0: all three style knobs (size, weight, shadow) read CSS custom
+ * properties so the user prefs panel can mutate them live for both inline
+ * and PiP rendering without touching layout JS.
+ */
 .caption-text {
   font-family: var(--font-mono);
-  font-size: 1.05rem;
+  font-size: calc(1.05rem * var(--caption-font-scale, 1));
   line-height: 1.6;
   letter-spacing: -0.01em;
+  font-weight: var(--caption-font-weight, 400);
+  text-shadow: var(--caption-text-shadow, none);
+}
+.caption-text strong {
+  /* Bold-confirmed words stay at least one weight step above the live tail
+   * so the visual hierarchy works for ALL chosen base weights. */
+  font-weight: calc(var(--caption-font-weight, 400) + 300);
+}
+
+/* Caption position — applied to #cp-caption-stream as flex align so the
+ * scrolled content sits at the requested vertical position when there's
+ * less content than container height. */
+.caption-position-top    { justify-content: flex-start; }
+.caption-position-middle { justify-content: center; }
+.caption-position-bottom { justify-content: flex-end; }
+
+/* Pill-style radio group used in caption-style prefs.
+ * Hides the native radio + makes the wrapping <span> the visible button.
+ * Selected state via :has() so we don't need JS for the visual swap. */
+.cp-pill-radio {
+  position: relative;
+  display: flex;
+  cursor: pointer;
+  user-select: none;
+}
+.cp-pill-radio input[type="radio"] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.cp-pill-radio span {
+  width: 100%;
+  text-align: center;
+  padding: 0.4rem 0.5rem;
+  border-radius: 0.375rem;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  color: var(--color-fg-muted);
+  background: var(--color-surface-strong);
+  transition: background 120ms ease-out, color 120ms ease-out;
+}
+.cp-pill-radio:hover span {
+  background: var(--color-brand-soft);
+  color: var(--color-brand-strong);
+}
+.cp-pill-radio:has(input:checked) span {
+  background: var(--color-brand);
+  color: white;
 }
 
 /* "LIVE" pulsing dot */

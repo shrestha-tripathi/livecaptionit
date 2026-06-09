@@ -59,6 +59,103 @@
         Applies on next Start. Model files cache in your browser — first download is one-time.
       </p>
     </details>
+
+    {/* ── Caption style (collapsible) ── */}
+    <details
+      id="cp-style-prefs"
+      class="mt-3 max-w-md mx-auto text-left rounded-lg bg-[var(--color-surface)] shadow-line group"
+    >
+      <summary class="cursor-pointer select-none px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-[var(--color-fg-muted)] flex items-center justify-between">
+        <span class="inline-flex items-center gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+          Caption style
+        </span>
+        <svg class="transition-transform group-open:rotate-180" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </summary>
+      <div class="px-4 pb-4 pt-1 space-y-3.5">
+
+        {/* Font size */}
+        <div>
+          <div class="flex items-center justify-between text-xs">
+            <label for="cp-style-fontscale" class="text-[var(--color-fg-muted)]">Font size</label>
+            <span id="cp-style-fontscale-val" class="font-mono text-[var(--color-fg)] tabular-nums">100%</span>
+          </div>
+          <input
+            id="cp-style-fontscale"
+            type="range"
+            min="80" max="200" step="5" value="100"
+            class="mt-1.5 w-full accent-[var(--color-brand)]"
+          />
+        </div>
+
+        {/* Font weight */}
+        <div>
+          <div class="flex items-center justify-between text-xs">
+            <label for="cp-style-fontweight" class="text-[var(--color-fg-muted)]">Base weight</label>
+          </div>
+          <div class="mt-1.5 grid grid-cols-3 gap-1.5">
+            <label class="cp-pill-radio">
+              <input type="radio" name="cp-style-fontweight" value="400" checked />
+              <span>Regular</span>
+            </label>
+            <label class="cp-pill-radio">
+              <input type="radio" name="cp-style-fontweight" value="500" />
+              <span>Medium</span>
+            </label>
+            <label class="cp-pill-radio">
+              <input type="radio" name="cp-style-fontweight" value="600" />
+              <span>Bold</span>
+            </label>
+          </div>
+        </div>
+
+        {/* Caption position in PiP */}
+        <div>
+          <div class="flex items-center justify-between text-xs">
+            <label class="text-[var(--color-fg-muted)]">Position in caption box</label>
+          </div>
+          <div class="mt-1.5 grid grid-cols-3 gap-1.5">
+            <label class="cp-pill-radio">
+              <input type="radio" name="cp-style-position" value="top" checked />
+              <span>Top</span>
+            </label>
+            <label class="cp-pill-radio">
+              <input type="radio" name="cp-style-position" value="middle" />
+              <span>Middle</span>
+            </label>
+            <label class="cp-pill-radio">
+              <input type="radio" name="cp-style-position" value="bottom" />
+              <span>Bottom</span>
+            </label>
+          </div>
+        </div>
+
+        {/* Text shadow toggle */}
+        <label
+          class="flex items-center justify-between gap-2 text-xs cursor-pointer select-none px-2 py-1.5 rounded-md hover:bg-[var(--color-surface-strong)] transition-colors"
+        >
+          <span class="text-[var(--color-fg-muted)]">Text shadow <span class="text-[var(--color-fg-subtle)] normal-case font-normal">(legibility over bright video)</span></span>
+          <input
+            id="cp-style-shadow"
+            type="checkbox"
+            class="size-3.5 accent-[var(--color-brand)] cursor-pointer"
+            checked
+          />
+        </label>
+
+        <div class="flex items-center justify-between gap-2 pt-1">
+          <p class="text-[10px] text-[var(--color-fg-subtle)] leading-snug">
+            Live-applies. Saved to your browser only.
+          </p>
+          <button
+            id="cp-style-reset"
+            type="button"
+            class="shrink-0 text-[10px] uppercase tracking-wider font-semibold px-2 py-1 rounded-md text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-strong)] transition-colors"
+            title="Reset to defaults"
+          >Reset</button>
+        </div>
+      </div>
+    </details>
     <details
       id="cp-prefs"
       class="mt-5 max-w-md mx-auto text-left rounded-lg bg-[var(--color-surface)] shadow-line group"
@@ -175,10 +272,12 @@
 
         {/* Scrollable caption history — committed text + live (uncommitted) tail
             flow as ONE continuous stream. Live tail is a muted span at the
-            end of the current paragraph. No visual panel split. */}
+            end of the current paragraph. No visual panel split.
+            Flex column so the caption-position-{top|middle|bottom} class
+            controls vertical alignment of the content within the scroller. */}
         <div
           id="cp-caption-stream"
-          class="caption-text text-[var(--color-fg)] flex-1 min-h-0 overflow-y-auto px-5 py-3"
+          class="caption-text text-[var(--color-fg)] flex-1 min-h-0 overflow-y-auto px-5 py-3 flex flex-col caption-position-top"
           aria-live="polite"
           aria-atomic="false"
         >
