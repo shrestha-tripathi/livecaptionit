@@ -23,8 +23,21 @@
       Start captions
     </button>
     <p class="mt-3.5 text-xs text-[var(--color-fg-subtle)]">
-      Pick the tab or window whose audio you want captioned. Audio is processed locally — never uploads.
+      Opens a floating window that stays on top of any app. Audio processed locally — never uploads.
     </p>
+    <div class="mt-4 flex justify-center">
+      <label
+        id="cp-inline-toggle-wrap"
+        class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs text-[var(--color-fg-muted)] cursor-pointer select-none shadow-line hover:bg-[var(--color-surface)] transition-colors"
+      >
+        <input
+          id="cp-inline-toggle"
+          type="checkbox"
+          class="size-3.5 accent-[var(--color-brand)] cursor-pointer"
+        />
+        Show captions in this tab instead
+      </label>
+    </div>
     <div id="cp-support-warn" class="hidden mt-5 px-4 py-3 rounded-md bg-[var(--color-surface)] text-sm text-[var(--color-fg-muted)] shadow-line"></div>
   </div>
 
@@ -55,7 +68,7 @@
               id="cp-pip-btn"
               type="button"
               class="text-[10px] uppercase tracking-wider font-semibold px-2.5 py-1 rounded-md bg-[var(--color-surface-strong)] hover:bg-[var(--color-brand)] hover:text-white transition-colors shadow-line"
-              title="Pop captions into a floating window"
+              title="Toggle floating window"
             >Pop out</button>
             <button
               id="cp-stop-btn"
@@ -65,6 +78,20 @@
             >Stop</button>
           </div>
         </header>
+
+        {/* Status banner — visible inside both main mount AND PiP window
+            (same DOM node, moves with the caption box). Hidden once
+            the first real caption arrives. */}
+        <div id="cp-caption-status" class="hidden mb-3 px-3 py-2 rounded-md bg-[var(--color-surface-strong)]">
+          <div class="flex items-center gap-2 text-xs text-[var(--color-fg-muted)]">
+            <span class="size-1.5 rounded-full bg-[var(--color-brand)] rec-dot"></span>
+            <span id="cp-caption-status-msg">Loading…</span>
+          </div>
+          <div class="mt-2 h-0.5 rounded-full bg-[var(--color-surface)] overflow-hidden">
+            <div id="cp-caption-status-bar" class="hidden h-full bg-[var(--color-brand)] transition-all" style="width: 0%"></div>
+          </div>
+        </div>
+
         <div id="cp-caption-stream" class="caption-text text-[var(--color-fg)]">
           <p class="text-[var(--color-fg-subtle)] text-sm italic">Listening… first caption usually appears within ~3 seconds.</p>
         </div>

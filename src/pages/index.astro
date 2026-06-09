@@ -82,9 +82,9 @@ const faqJsonLd = {
       <h2 class="text-2xl font-bold tracking-tight text-center">How it works</h2>
       <div class="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-4">
         {[
-          { n: "1", title: "Pick the source", body: "Click Start, then choose the tab, window, or screen whose audio you want captioned. Don't forget to tick 'Share tab audio' on the picker." },
-          { n: "2", title: "Captions appear", body: "Whisper transcribes audio locally in your browser via WebGPU. First-time load downloads ~75 MB of model; second visit is instant." },
-          { n: "3", title: "Pop out to float", body: "Click 'Pop out' to move the captions into a floating window that stays on top while you switch apps. Close the window to bring them back." },
+          { n: "1", title: "Click Start", body: "A floating window pops up, and your browser asks which tab, window, or screen to listen to. Tick 'Share tab audio' on the picker." },
+          { n: "2", title: "Pick the source", body: "Choose what to caption — a YouTube tab, a podcast, a web meeting. Whisper loads locally in your browser via WebGPU (~75 MB first time, instant after)." },
+          { n: "3", title: "Captions float over anything", body: "The floating window stays on top of whatever app you switch to. Close it to bring captions back into this tab." },
         ].map((step) => (
           <div class="bg-[var(--color-surface)] rounded-xl p-5 shadow-line">
             <div class="size-7 grid place-items-center rounded-full font-bold text-xs" style="background: var(--color-brand); color: white">{step.n}</div>
