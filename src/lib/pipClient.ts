@@ -74,26 +74,71 @@ export async function openPip(options: PipOpenOptions): Promise<PipHandle> {
   const theme = document.documentElement.getAttribute("data-theme");
   if (theme) pipWindow.document.documentElement.setAttribute("data-theme", theme);
 
-  // Tag the PiP <body> so we can style it differently if needed.
+  // Tag the PiP <body> + base styling. Note: bg is set to transparent by
+  // the injected stylesheet below (for native-caption feel over videos).
   pipWindow.document.body.classList.add("pip-window");
   pipWindow.document.body.style.margin = "0";
-  pipWindow.document.body.style.background = "var(--color-bg)";
   pipWindow.document.body.style.color = "var(--color-fg)";
   pipWindow.document.body.style.fontFamily = "var(--font-sans)";
 
-  // ── Opacity (user-configurable) ──
-  // Idle opacity comes from CSS var --pip-opacity so we can mutate it
-  // live via setOpacity() without touching layout. The body fades to
-  // that value, then snaps back to 1.0 on hover so the user can still
-  // see controls clearly when they reach for Stop or interact.
+  // ── Opacity (user-configurable, native-caption style) ──
+  // The opacity slider now controls the caption BOX's background alpha
+  // — NOT the content opacity. Text stays full white so it stays
+  // readable; the dark panel fades to let the video underneath show
+  // through. Mirrors how YouTube / Live Caption / VLC subtitles work.
+  // Live-mutate via --pip-opacity CSS var; setOpacity() updates it.
   const initialOpacity = Math.max(0.2, Math.min(1, options.opacity ?? 1));
   pipWindow.document.body.style.setProperty("--pip-opacity", String(initialOpacity));
-  pipWindow.document.body.style.opacity = "var(--pip-opacity)";
-  pipWindow.document.body.style.transition = "opacity 200ms ease-out";
-  const hoverStyle = pipWindow.document.createElement("style");
-  hoverStyle.textContent =
-    "body.pip-window:hover { opacity: 1 !important; }";
-  pipWindow.document.head.appendChild(hoverStyle);
+
+  // Inject PiP-specific styles: transparent window, dark translucent
+  // caption box that fills the viewport edge-to-edge, hover-only
+  // controls, text-shadow for over-video legibility.
+  const pipStyle = pipWindow.document.createElement("style");
+  pipStyle.textContent = `
+    html, body.pip-window {
+      background: transparent !important;
+      overflow: hidden;
+    }
+    body.pip-window .cp-caption-box {
+      background: rgba(20, 20, 20, var(--pip-opacity, 1)) !important;
+      color: #ffffff !important;
+      box-shadow: none !important;
+      border-radius: 0 !important;
+      height: 100vh !important;
+      transition: background-color 200ms ease-out;
+    }
+    /* Text-shadow keeps captions readable even at low opacity over bright video frames */
+    body.pip-window #cp-caption-stream {
+      color: #ffffff !important;
+      text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85), 0 0 8px rgba(0, 0, 0, 0.55);
+    }
+    body.pip-window #cp-caption-stream p { color: #ffffff !important; }
+    body.pip-window #cp-caption-stream strong { color: #ffffff !important; font-weight: 700; }
+    body.pip-window #cp-caption-stream span.live-tail { color: rgba(255, 255, 255, 0.55) !important; }
+    /* Header (LIVE + Stop) hidden by default in PiP, fades in on hover.
+       Long leave-delay so glancing away doesn't kill controls instantly. */
+    body.pip-window .cp-caption-box > header {
+      opacity: 0;
+      transition: opacity 220ms ease-out 1s;
+      border-bottom-color: rgba(255, 255, 255, 0.15) !important;
+    }
+    body.pip-window:hover .cp-caption-box > header,
+    body.pip-window:focus-within .cp-caption-box > header {
+      opacity: 1;
+      transition: opacity 120ms ease-out 0s;
+    }
+    /* Status banner (loading model etc) — make legible against translucent dark bg */
+    body.pip-window #cp-caption-status {
+      background: rgba(255, 255, 255, 0.08) !important;
+    }
+    body.pip-window #cp-caption-status,
+    body.pip-window #cp-caption-status * {
+      color: rgba(255, 255, 255, 0.9) !important;
+    }
+    /* Source label (the long media-stream id) — keep dim in PiP */
+    body.pip-window #cp-source-label { color: rgba(255, 255, 255, 0.55) !important; }
+  `;
+  pipWindow.document.head.appendChild(pipStyle);
 
   // MOVE the element into PiP (this is the magic — same JS realm, same nodes)
   pipWindow.document.body.appendChild(options.movableEl);
