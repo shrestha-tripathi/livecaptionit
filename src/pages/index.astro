@@ -73,14 +73,6 @@ const faqJsonLd = {
     },
     {
       "@type": "Question",
-      name: "Can it caption a foreign-language video in English?",
-      acceptedAnswer: {
-        "@type": "Answer",
-        text: `<p>Yes — flip the output mode toggle to "Translate → English" on the home page. ${site.name} uses Whisper's built-in translation task: it auto-detects any of 99 source languages (Spanish, French, German, Mandarin, Japanese, Hindi, Arabic, and more) and outputs English captions. No extra model download, runs 100% locally just like transcribe mode. Output language is always English in this mode; into-other-languages translation is on the roadmap.</p>`,
-      },
-    },
-    {
-      "@type": "Question",
       name: "Can it caption audio from a desktop app like Zoom or Spotify?",
       acceptedAnswer: {
         "@type": "Answer",
@@ -108,7 +100,7 @@ const faqJsonLd = {
         <span class="text-[var(--color-fg-muted)]">Floats over anything.</span>
       </h1>
       <p class="mt-5 text-lg text-[var(--color-fg-muted)] max-w-xl mx-auto">
-        Caption a YouTube video, a podcast, a web meeting — anything your browser can hear. Translate <strong class="text-[var(--color-fg)]">any of 99 spoken languages</strong> into English captions, live. The captions pop into a floating window that stays on top no matter what app you switch to.
+        Caption a YouTube video, a podcast, a web meeting — anything your browser can hear. The captions pop into a floating window that stays on top no matter what app you switch to.
       </p>
     </section>
 
@@ -144,8 +136,8 @@ const faqJsonLd = {
           { icon: "💼", label: "Web meetings" },
           { icon: "🎙️", label: "Podcasts" },
           { icon: "🎥", label: "YouTube videos" },
-          { icon: "🌐", label: "Foreign-language content" },
-          { icon: "🇪🇸", label: "Spanish / French / German clips" },
+          { icon: "📺", label: "Live streams" },
+          { icon: "🌐", label: "Foreign content" },
           { icon: "👂", label: "Hearing accessibility" },
           { icon: "📝", label: "Voice notes & dictation" },
         ].map((u) => (

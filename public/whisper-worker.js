@@ -15,7 +15,7 @@
 //
 // Message protocol:
 //   incoming: { type: "init", model?: string }
-//             { type: "transcribe", audio: Float32Array, id?: number, task?: "transcribe" | "translate" }
+//             { type: "transcribe", audio: Float32Array, id?: number }
 //             { type: "dispose" }
 //   outgoing: { type: "loading", message: string, progress?: number }
 //             { type: "ready", model: string, device: "webgpu" | "wasm" }
@@ -140,32 +140,19 @@ async function init(model = DEFAULT_MODEL) {
   }
 }
 
-async function transcribe(audio, id, task) {
+async function transcribe(audio, id) {
   if (!asr) {
     self.postMessage({ type: "error", message: "Worker not initialized." });
     return;
   }
   const start = performance.now();
-  // Whisper accepts task="transcribe" (output in the SAME language as input)
-  // or task="translate" (output in English, regardless of input language).
-  // Translation uses Whisper's built-in `<|translate|>` decoder token —
-  // no new model download required, just decoder behavior change.
-  //
-  // `language` semantics differ between tasks:
-  //   - transcribe: hint for the source language (we prime "english" since
-  //     the default model is English-best; passing null also works but is
-  //     marginally slower as Whisper auto-detects)
-  //   - translate: the SOURCE language (the one being translated FROM).
-  //     We pass null so Whisper auto-detects, supporting all 99 source
-  //     languages without a UI picker. Output is always English.
-  const isTranslate = task === "translate";
   try {
     const result = await asr(audio, {
       chunk_length_s: 30,
       stride_length_s: 5,
       return_timestamps: false,
-      language: isTranslate ? null : "english",
-      task: isTranslate ? "translate" : "transcribe",
+      language: "english",
+      task: "transcribe",
       // Streaming-friendly decode: greedy + deterministic so the
       // LocalAgreement-2 algorithm on the parent side can detect
       // consistent prefixes across overlapping windows. Random or
@@ -175,11 +162,11 @@ async function transcribe(audio, id, task) {
       temperature: 0,
       // Anti-music-hallucination: Whisper has a known failure mode on
       // rhythmic vocal audio where it locks onto a 2-3 word phrase and
-      // emits it 4-8 times in a row ("of thug of thug of thug ..."
-      // on Despacito; "go to the go to the" on EDM). no_repeat_ngram_size
-      // forces the decoder to not emit any trigram that already appeared
-      // in the output — kills the pattern at decode time so we don't
-      // have to clean it up downstream. Set to 3 because:
+      // emits it 4-8 times in a row ("of thug of thug of thug ..." on
+      // music with sustained vocals). no_repeat_ngram_size forces the
+      // decoder to not emit any trigram that already appeared in the
+      // output — kills the pattern at decode time so we don't have to
+      // clean it up downstream. Set to 3 because:
       //   - 2 is too aggressive (real speech repeats bigrams: "of the",
       //     "and the", "in the" appear multiple times naturally)
       //   - 4+ doesn't catch the "of thug" case
@@ -204,7 +191,7 @@ self.onmessage = async (e) => {
       await init(data.model);
       break;
     case "transcribe":
-      await transcribe(data.audio, data.id, data.task);
+      await transcribe(data.audio, data.id);
       break;
     case "dispose":
       asr = null;

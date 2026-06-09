@@ -1,6 +1,6 @@
 # CaptionPip — Spec
 
-**Status:** v0.1 → v0.2.1 shipped · v0.3.0 translation shipped · **v0.3.1 IN PROGRESS** (stopped-substate UX + music-hallucination fixes)
+**Status:** v0.1 → v0.3.1 shipped · **v0.3.2 IN PROGRESS** (translate-mode removal + PiP substate bug fix)
 **Date:** 2026-06-08 (v0.1) · 2026-06-09 (v0.1.1 → v0.3.0)
 **Working domain:** `captionpip.com` (RDAP-verified available — buy before commit if you keep the name)
 **Repo:** `github.com/shrestha-tripathi/captionpip` (private until shipped)
@@ -17,7 +17,8 @@
 | **v0.2.0** | 2026-06-09 | **Polish release** — model picker (tiny/base/small), caption customization (size/weight/position), transcript download (.txt/.vtt/.srt), microphone-only mode, FAQ refresh | `fbb98e8` → `b8a9883` |
 | v0.2.1 | 2026-06-09 | Layout patch: nav + footer widened from max-w-5xl to max-w-7xl for better left-anchoring on big screens | `192c05e` |
 | **v0.3.0** | 2026-06-09 | **Translation mode** — Whisper auto-detect any language → English captions (zero new model download) | `69b0713` → `8395fd0` |
-| **v0.3.1** | _in progress_ | UX fix: stopped-substate (Stop → Done, Start new btn, no more "Stop" sitting there forever); music-hallucination fix (n-gram filter + `no_repeat_ngram_size: 3` decoder param) | _see below_ |
+| **v0.3.1** | 2026-06-09 | Bug fixes: stopped sub-state UI (Stop → Done, Start new btn) + music-hallucination filter (n-gram + `no_repeat_ngram_size: 3`) | `e1fb064` + `0e52ae1` |
+| **v0.3.2** | _in progress_ | **Translate mode removed** (quality wasn't good enough on real-world music + Hindi content); **PiP substate bug fixed** (header stayed STOPPED after Start new because `setSubstate` queried from rootEl which doesn't contain the caption-box while PiP is open) | _see below_ |
 
 ---
 

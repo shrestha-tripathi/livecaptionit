@@ -71,7 +71,6 @@ const PIP_PREFS_KEY = "captionpip:pip-prefs";
 const MODEL_PREF_KEY = "captionpip:model-pref";
 const CAPTION_STYLE_KEY = "captionpip:caption-style";
 const SOURCE_PREF_KEY = "captionpip:source-pref";
-const TASK_PREF_KEY = "captionpip:task";
 
 type SourceKind = "tab" | "mic";
 function loadSourcePref(): SourceKind {
@@ -85,18 +84,16 @@ function saveSourcePref(v: SourceKind) {
   try { localStorage.setItem(SOURCE_PREF_KEY, v); } catch {}
 }
 
-/** Whisper output mode: transcribe (same-language) or translate (→ English). */
-type TaskKind = "transcribe" | "translate";
-function loadTaskPref(): TaskKind {
-  try {
-    const raw = localStorage.getItem(TASK_PREF_KEY);
-    if (raw === "transcribe" || raw === "translate") return raw;
-  } catch {}
-  return "transcribe";
-}
-function saveTaskPref(v: TaskKind) {
-  try { localStorage.setItem(TASK_PREF_KEY, v); } catch {}
-}
+// NOTE: v0.3.0 shipped a translate task toggle (Transcribe vs Translate → English)
+// backed by `captionpip:task` localStorage. Removed in v0.3.2 because Whisper's
+// translate quality on real-world music + non-English speech wasn't good enough
+// to ship as a feature (Despacito → "of thug of thug" loops; Hindi lyrics →
+// hallucinated brand names). The decoder-side `no_repeat_ngram_size: 3` and
+// the lib/hallucination.ts filter both stay — they help transcribe-mode too.
+// If a future revival happens (better Whisper model? IndicWhisper v2?), the
+// pattern was: `task` is a per-call param on `pipeline()`, not per-init, so
+// no model reload needed; UI was a second `.cp-segment-radio` group with
+// mid-session reset of agreement + rolling.
 
 interface CaptionStyle {
   /** Font size scale (0.8 – 2.0). */
@@ -254,10 +251,6 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
   const dlClearBtn = rootEl.querySelector<HTMLButtonElement>("#cp-dl-clear")!;
   // Source toggle (Tab / Mic) — radios in the idle screen
   const sourceRadios = rootEl.querySelectorAll<HTMLInputElement>('input[name="cp-source-toggle"]');
-  // Output mode toggle (Transcribe / Translate) — radios in the idle screen
-  const taskRadios = rootEl.querySelectorAll<HTMLInputElement>('input[name="cp-task-toggle"]');
-  const taskHints = rootEl.querySelectorAll<HTMLSpanElement>('[data-task-hint]');
-  const taskBadge = rootEl.querySelector<HTMLSpanElement>("#cp-task-badge")!;
 
   // ── Lifecycle state ──
   let captureHandle: CaptureHandle | null = null;
@@ -288,10 +281,6 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
   // when display capture isn't available. Restored to saved pref below if
   // support is fine.
   let currentSource: SourceKind = loadSourcePref();
-  // Hoist currentTask before any tick() runs (TDZ rule — `let` isn't hoisted
-  // like `var`). Task can be switched mid-session via the radios; the change
-  // handler resets the agreement state because output language changes.
-  let currentTask: TaskKind = loadTaskPref();
   if (!support.displayMediaAudio) {
     // No tab-audio capture, but mic mode still works via getUserMedia.
     // Force mic source + show explainer instead of disabling Start entirely.
@@ -511,36 +500,6 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
       const v = r.value as SourceKind;
       currentSource = v;
       saveSourcePref(v);
-    });
-  });
-
-  // Output-mode (task) toggle: restore saved + persist on change.
-  // Reset agreement + rolling buffer on mid-session switch because the
-  // output language changes — already-committed text would be in the
-  // wrong language for the new mode.
-  function applyTaskUI(task: TaskKind) {
-    taskRadios.forEach((r) => { r.checked = (r.value as TaskKind) === task; });
-    taskHints.forEach((el) => {
-      el.classList.toggle("hidden", el.dataset.taskHint !== task);
-    });
-    taskBadge.classList.toggle("hidden", task !== "translate");
-  }
-  applyTaskUI(currentTask);
-  taskRadios.forEach((r) => {
-    r.addEventListener("change", () => {
-      if (!r.checked) return;
-      const v = r.value as TaskKind;
-      if (v === currentTask) return;
-      currentTask = v;
-      saveTaskPref(v);
-      applyTaskUI(v);
-      // Mid-session reset so the next tick produces output in the new
-      // target language and the live tail doesn't carry over stale text.
-      // We do NOT clear `captionStream` — already-committed lines from
-      // the previous mode stay visible as session history.
-      rolling.reset();
-      agreement.reset();
-      captionStream.querySelectorAll<HTMLSpanElement>("span.live-tail").forEach((el) => el.remove());
     });
   });
 
@@ -784,7 +743,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     try {
       const audio = rolling.snapshot();
       const audioWasOverCap = rolling.isOverCap();
-      const { text, durationMs } = await whisper.transcribeWindow(audio, { task: currentTask });
+      const { text, durationMs } = await whisper.transcribeWindow(audio);
 
       // Adapt tick interval — never tick faster than 1.2× last inference,
       // never slower than MAX_TICK_MS. Keeps slow WebGPU/WASM devices

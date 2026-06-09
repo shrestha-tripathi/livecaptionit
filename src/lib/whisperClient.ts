@@ -19,16 +19,11 @@ export interface WhisperClient {
   init: (model?: string) => Promise<{ model: string; device: "webgpu" | "wasm" }>;
   /** Single-shot transcription. Returns text only (legacy v0.1 API). */
   transcribe: (audio: Float32Array) => Promise<string>;
-  /** Streaming transcription. Returns text + wall-clock inference duration.
-   *  `opts.task` selects "transcribe" (same language as input, default) or
-   *  "translate" (auto-detect source language → English output). */
-  transcribeWindow: (audio: Float32Array, opts?: { task?: WhisperTask }) => Promise<WindowResult>;
+  /** Streaming transcription. Returns text + wall-clock inference duration. */
+  transcribeWindow: (audio: Float32Array) => Promise<WindowResult>;
   dispose: () => void;
   onStatus: (cb: (s: WhisperStatus) => void) => void;
 }
-
-/** Whisper pipeline task selector. */
-export type WhisperTask = "transcribe" | "translate";
 
 // ────────────────────────────────────────────────────────────────────────
 // Model catalog
@@ -176,15 +171,12 @@ export function createWhisperClient(workerUrl = "/whisper-worker.js"): WhisperCl
     transcribe(audio: Float32Array) {
       return client.transcribeWindow(audio).then((r) => r.text);
     },
-    transcribeWindow(audio: Float32Array, opts?: { task?: WhisperTask }) {
+    transcribeWindow(audio: Float32Array) {
       return new Promise<WindowResult>((resolve, reject) => {
         const id = _nextId++;
         pending.set(id, { resolve, reject });
         // Transferable: surrender ownership of buffer to worker for zero-copy
-        worker.postMessage(
-          { type: "transcribe", audio, id, task: opts?.task ?? "transcribe" },
-          [audio.buffer],
-        );
+        worker.postMessage({ type: "transcribe", audio, id }, [audio.buffer]);
       });
     },
     dispose() {
