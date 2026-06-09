@@ -15,7 +15,7 @@
 //
 // Message protocol:
 //   incoming: { type: "init", model?: string }
-//             { type: "transcribe", audio: Float32Array, id?: number }
+//             { type: "transcribe", audio: Float32Array, id?: number, task?: "transcribe" | "translate" }
 //             { type: "dispose" }
 //   outgoing: { type: "loading", message: string, progress?: number }
 //             { type: "ready", model: string, device: "webgpu" | "wasm" }
@@ -140,19 +140,32 @@ async function init(model = DEFAULT_MODEL) {
   }
 }
 
-async function transcribe(audio, id) {
+async function transcribe(audio, id, task) {
   if (!asr) {
     self.postMessage({ type: "error", message: "Worker not initialized." });
     return;
   }
   const start = performance.now();
+  // Whisper accepts task="transcribe" (output in the SAME language as input)
+  // or task="translate" (output in English, regardless of input language).
+  // Translation uses Whisper's built-in `<|translate|>` decoder token —
+  // no new model download required, just decoder behavior change.
+  //
+  // `language` semantics differ between tasks:
+  //   - transcribe: hint for the source language (we prime "english" since
+  //     the default model is English-best; passing null also works but is
+  //     marginally slower as Whisper auto-detects)
+  //   - translate: the SOURCE language (the one being translated FROM).
+  //     We pass null so Whisper auto-detects, supporting all 99 source
+  //     languages without a UI picker. Output is always English.
+  const isTranslate = task === "translate";
   try {
     const result = await asr(audio, {
       chunk_length_s: 30,
       stride_length_s: 5,
       return_timestamps: false,
-      language: "english", // v0.1 hardcoded; v0.2 makes it configurable
-      task: "transcribe",
+      language: isTranslate ? null : "english",
+      task: isTranslate ? "translate" : "transcribe",
       // Streaming-friendly decode: greedy + deterministic so the
       // LocalAgreement-2 algorithm on the parent side can detect
       // consistent prefixes across overlapping windows. Random or
@@ -176,7 +189,7 @@ self.onmessage = async (e) => {
       await init(data.model);
       break;
     case "transcribe":
-      await transcribe(data.audio, data.id);
+      await transcribe(data.audio, data.id, data.task);
       break;
     case "dispose":
       asr = null;
