@@ -173,6 +173,21 @@ async function transcribe(audio, id, task) {
       // and never trigger a commit.
       num_beams: 1,
       temperature: 0,
+      // Anti-music-hallucination: Whisper has a known failure mode on
+      // rhythmic vocal audio where it locks onto a 2-3 word phrase and
+      // emits it 4-8 times in a row ("of thug of thug of thug ..."
+      // on Despacito; "go to the go to the" on EDM). no_repeat_ngram_size
+      // forces the decoder to not emit any trigram that already appeared
+      // in the output — kills the pattern at decode time so we don't
+      // have to clean it up downstream. Set to 3 because:
+      //   - 2 is too aggressive (real speech repeats bigrams: "of the",
+      //     "and the", "in the" appear multiple times naturally)
+      //   - 4+ doesn't catch the "of thug" case
+      //   - 3 catches lyric loops without breaking natural speech.
+      // Belt-and-suspenders: a downstream looksHallucinated() filter in
+      // CaptionApp.script.ts still scans for residual patterns in case
+      // the decoder slips one past.
+      no_repeat_ngram_size: 3,
     });
     const text = (result && result.text ? result.text : "").trim();
     const durationMs = Math.round(performance.now() - start);

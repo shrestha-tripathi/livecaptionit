@@ -47,6 +47,7 @@ import {
 import { openPip, isPipSupported, type PipHandle } from "../lib/pipClient";
 import { detectSupport } from "../lib/browserSupport";
 import { Agreement } from "../lib/agreement";
+import { looksHallucinated } from "../lib/hallucination";
 import {
   formatTxt,
   formatVtt,
@@ -64,7 +65,7 @@ const MAX_TICK_MS = 2000; // hard cap on adaptive tick interval
 const FORCE_COMMIT_KEEP_SECONDS = 2; // keep this much trailing audio after force-commit
 const SILENCE_RMS_THRESHOLD = 0.005; // below this = treated as silence (skip transcription)
 const SILENCE_RESET_SECONDS = 2.5; // sustained silence longer than this → wipe buffer + agreement (kills Whisper hallucinations)
-const HALLUCINATION_MAX_REPEAT = 4; // drop tick output where the same word repeats this many times consecutively
+const HALLUCINATION_MAX_REPEAT = 4; // kept in sync with DEFAULT_REPEAT_THRESHOLD in lib/hallucination.ts — bump both together if the threshold needs tuning
 const INLINE_PREF_KEY = "captionpip:inline-pref";
 const PIP_PREFS_KEY = "captionpip:pip-prefs";
 const MODEL_PREF_KEY = "captionpip:model-pref";
@@ -727,23 +728,10 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     }, nextTickMs);
   }
 
-  /** Detect Whisper hallucinations on silent input (e.g. "you you you you you").
-   *  Returns true if the text contains a run of HALLUCINATION_MAX_REPEAT or more
-   *  identical consecutive words. */
-  function looksHallucinated(text: string): boolean {
-    const tokens = text.trim().toLowerCase().split(/\s+/).filter(Boolean);
-    if (tokens.length < HALLUCINATION_MAX_REPEAT) return false;
-    let run = 1;
-    for (let i = 1; i < tokens.length; i++) {
-      if (tokens[i] === tokens[i - 1]) {
-        run++;
-        if (run >= HALLUCINATION_MAX_REPEAT) return true;
-      } else {
-        run = 1;
-      }
-    }
-    return false;
-  }
+  /** Detect Whisper hallucinations — extracted to `lib/hallucination.ts`
+   *  so it can be unit-tested in isolation. See that module for the full
+   *  doc + threshold semantics. The inline copy was Layer-1-only; the
+   *  module adds Layer 2 (n-gram phrase repeats) for music content. */
 
   /** Promote whatever's currently sitting in the live tail to committed
    *  words. Used at "natural break" boundaries — silence-reset, user-stop,
