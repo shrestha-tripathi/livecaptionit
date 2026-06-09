@@ -1,10 +1,10 @@
 # CaptionPip — Spec
 
-**Status:** v0.1 shipped · v0.1.1 PiP-first flow shipped · v0.1.2 rolling-window shipped · v0.1.3 polish shipped · **v0.2.0 IN PROGRESS** (polish release)
-**Date:** 2026-06-08 (v0.1) · 2026-06-09 (v0.1.1, v0.1.2, v0.1.3, v0.2.0 spec)
+**Status:** v0.1 shipped · v0.1.1 PiP-first flow shipped · v0.1.2 rolling-window shipped · v0.1.3 polish shipped · v0.2.0 polish release shipped · v0.2.1 layout patch shipped · **v0.3.0 IN PROGRESS** (translation mode)
+**Date:** 2026-06-08 (v0.1) · 2026-06-09 (v0.1.1 → v0.3.0)
 **Working domain:** `captionpip.com` (RDAP-verified available — buy before commit if you keep the name)
 **Repo:** `github.com/shrestha-tripathi/captionpip` (private until shipped)
-**Ship target:** v0.2.0 this week
+**Ship target:** v0.3.0 this week
 
 ## Changelog
 
@@ -14,7 +14,9 @@
 | v0.1.1 | 2026-06-09 | Worker hang fix (onnx-community model + timeout); PiP-first flow (zero alt-tabs) | `15797ca`, `e807289` |
 | v0.1.2 | 2026-06-09 | **Rolling-window real-time captions** — first word within ~700ms, in-place refresh, LocalAgreement-2 commit | `41e1e87` series |
 | v0.1.3 | 2026-06-09 | UX polish: silence guard, hallucination filter, native PiP look, % size sliders, theme-aware PiP, live-tail preservation | `e2dd088` series |
-| **v0.2.0** | _in progress_ | **Polish release** — model picker, caption customization, transcript download, mic-only mode, FAQ refresh | _see §v0.2.0 below_ |
+| **v0.2.0** | 2026-06-09 | **Polish release** — model picker (tiny/base/small), caption customization (size/weight/position), transcript download (.txt/.vtt/.srt), microphone-only mode, FAQ refresh | `fbb98e8` → `b8a9883` |
+| v0.2.1 | 2026-06-09 | Layout patch: nav + footer widened from max-w-5xl to max-w-7xl for better left-anchoring on big screens | `192c05e` |
+| **v0.3.0** | _in progress_ | **Translation mode** — Whisper auto-detect any language → English captions (zero new model download) | _see §v0.3.0 below_ |
 
 ---
 
@@ -1001,3 +1003,114 @@ v0.2.0 ships when:
 | 5 | FAQ copy refresh | ~50 |
 
 Total: ~1000 LOC, 5 commits.
+
+
+---
+
+# v0.3.0 — Translation Mode
+
+**Goal:** Make CaptionPip useful for users watching/consuming content in foreign languages. Whisper natively supports a `translate` task that takes any of 99 source languages and outputs English — no new model download, no bundle bloat, no API call. This is a structural moat play: Otter/Fireflies sell this as a $30/mo cloud feature; we ship it for $0, 100% local.
+
+## 3.0.1 Why now
+
+- **It's the cheapest "wow" we can ship.** transformers.js' `pipeline()` already accepts `task: "translate"` on the existing Whisper pipeline. ~2 lines of worker change + a UI toggle.
+- **It demos viscerally.** "Open a Spanish YouTube video → live English captions floating in PiP, never uploads." Shareable as a 30s screen recording.
+- **Brand reinforcement.** "Live captions" → "Live captions + translation" expands the TAM ~5× (non-English content consumption is the dominant use case globally).
+- **Zero degradation for English users.** Default stays `transcribe`; users opt in.
+- **Side-steps the IndicWhisper quality problem entirely.** OpenAI's Whisper translate-to-English is well-validated across 99 languages.
+
+## 3.0.2 IN SCOPE
+
+### 1. Worker task parameter
+
+- `transcribe(audio, opts?)` in the worker accepts `{ task: "transcribe" | "translate" }`. Default `"transcribe"` (preserves current behavior).
+- Pipeline call becomes:
+  ```js
+  await asr(audio, { ...existing, task })
+  ```
+  When `task === "translate"`, Whisper's special tokens force English output regardless of detected source language. `language: "english"` stays — it's the OUTPUT language hint for translate mode.
+- Worker re-uses the same pipeline instance. No reload between mode switches.
+
+### 2. Client + script wiring
+
+- `WhisperClient.transcribeWindow(audio, opts?)` takes optional `{ task }`. Defaults preserved.
+- `CaptionApp.script.ts` reads `currentTask` from a top-of-`init()` `let` (TDZ rule), persisted to `localStorage["captionpip:task"]`. Default `"transcribe"`.
+- Each `tick()` passes `{ task: currentTask }` to `transcribeWindow`.
+- Switching mode mid-session resets agreement + rolling buffer (different output language = stale committed text is wrong).
+
+### 3. UI — segmented Transcribe/Translate toggle
+
+- New `.cp-segment-radio` group above the source toggle on the idle screen:
+  ```
+  Output mode
+  [ Transcribe ] [ Translate → English ]
+  Tiny helper: "Translate auto-detects spoken language and outputs English."
+  ```
+- During active session: small badge in the caption box header showing current mode (so users in PiP know what they're seeing).
+- Switching mode in active session: prompt-free, just trigger reset + re-init agreement.
+
+### 4. FAQ + landing copy refresh
+
+- Add Q: "How do I get English captions for a foreign-language video?" → A explaining Translate mode.
+- Hero subhead updated: "Caption a YouTube video, a podcast, a web meeting — anything your browser can hear. Translate any of 99 languages into English captions, live."
+- Use-cases: add "Foreign-language YouTube lectures · Spanish podcasts · French interviews · Japanese game streams".
+- Open-source/local angle stays the marquee pitch.
+
+## 3.0.3 OUT OF SCOPE (still deferred)
+
+- Translate INTO non-English languages (would need a second model — NLLB or M2M, defer to v0.4)
+- Language picker for source language hint (Whisper's auto-detect is good enough; explicit picker can come in v0.3.1 if users ask)
+- IndicWhisper (defer indefinitely — current quality not good enough per shrestha 2026-06-09)
+- Speaker diarization (defer to v0.4)
+- AudioWorklet migration (defer to v0.4)
+- Browser extension (defer to v0.5)
+
+## 3.0.4 Architecture impact (minimal)
+
+| Layer | Change |
+|---|---|
+| `public/whisper-worker.js` | Accept `task` from message, pass to `pipeline()` call. Default `"transcribe"`. |
+| `src/lib/whisperClient.ts` | `transcribeWindow(audio, opts?)` signature change. Message envelope adds `task`. |
+| `src/components/CaptionApp.astro` | New segmented radio above source toggle. New badge inside caption box header. |
+| `src/components/CaptionApp.script.ts` | `currentTask` state (top of `init()`), persistence helpers, switch handler that resets pipeline state. |
+| `src/styles/global.css` | No new classes — reuses `.cp-segment-radio` from v0.2.0. |
+| `src/pages/index.astro` | FAQ Q&A, hero subhead, use-cases list. |
+
+## 3.0.5 Persistence
+
+```
+captionpip:task = "transcribe" | "translate"
+```
+
+Default `"transcribe"`. Load helper falls back to default on parse failure / unknown value.
+
+## 3.0.6 Manual test checklist (run in Edge on Mac)
+
+- [ ] Start in transcribe mode (default) → English video → English captions. No regression.
+- [ ] Toggle to translate → wait for active session → captions still English. No reload required.
+- [ ] Reload → toggle persists.
+- [ ] Open a Spanish YouTube video (Despacito music video lyrics) → translate mode → English captions appear.
+- [ ] Open a French interview → translate mode → English captions appear.
+- [ ] Switch from translate → transcribe mid-session on the same Spanish video → Spanish captions appear (Whisper detects).
+- [ ] PiP shows mode badge correctly in both modes.
+- [ ] Mic mode + translate: speak in Hindi → English captions appear.
+- [ ] Both themes still pass for the new toggle.
+
+## 3.0.7 Success criteria
+
+- Translate mode produces English output on a Spanish/French test clip with >70% word accuracy.
+- Mode switch in active session is < 500ms (no model reload).
+- No regression on existing English transcribe path.
+- Build clean, 26/26 unit tests still green.
+- Brand-grep clean.
+
+## 3.0.8 Estimated commits
+
+| # | Scope | LOC est |
+|---|---|---|
+| 1 | docs: v0.3.0 SPEC section | ~120 |
+| 2 | feat(whisper): task param plumbing (worker + client) | ~40 |
+| 3 | feat(captions): Transcribe/Translate toggle UI + persistence | ~120 |
+| 4 | docs(landing): FAQ + hero + use-cases for translation | ~60 |
+
+Total: ~340 LOC, 4 commits.
