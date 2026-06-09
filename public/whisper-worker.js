@@ -19,7 +19,7 @@
 //             { type: "dispose" }
 //   outgoing: { type: "loading", message: string, progress?: number }
 //             { type: "ready", model: string, device: "webgpu" | "wasm" }
-//             { type: "result", text: string, id?: number }
+//             { type: "result", text: string, id?: number, durationMs: number }
 //             { type: "error", message: string }
 
 import { pipeline, env } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.5/dist/transformers.min.js";
@@ -145,6 +145,7 @@ async function transcribe(audio, id) {
     self.postMessage({ type: "error", message: "Worker not initialized." });
     return;
   }
+  const start = performance.now();
   try {
     const result = await asr(audio, {
       chunk_length_s: 30,
@@ -152,9 +153,17 @@ async function transcribe(audio, id) {
       return_timestamps: false,
       language: "english", // v0.1 hardcoded; v0.2 makes it configurable
       task: "transcribe",
+      // Streaming-friendly decode: greedy + deterministic so the
+      // LocalAgreement-2 algorithm on the parent side can detect
+      // consistent prefixes across overlapping windows. Random or
+      // beam sampling would produce different text on identical input
+      // and never trigger a commit.
+      num_beams: 1,
+      temperature: 0,
     });
     const text = (result && result.text ? result.text : "").trim();
-    self.postMessage({ type: "result", text, id });
+    const durationMs = Math.round(performance.now() - start);
+    self.postMessage({ type: "result", text, id, durationMs });
   } catch (e) {
     self.postMessage({ type: "error", message: (e && e.message) || String(e) });
   }
