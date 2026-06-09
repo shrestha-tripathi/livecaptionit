@@ -400,6 +400,21 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     return false;
   }
 
+  /** Promote whatever's currently sitting in the live tail to committed
+   *  words. Used at "natural break" boundaries — silence-reset, user-stop,
+   *  force-commit — where letting the live tail vanish would mean lost
+   *  captions the user already SAW on screen (in muted italic).
+   *
+   *  Skips obvious hallucinations so we don't bold "you you you you" runs.
+   *  This is the user-visibility-preserving counterpart to agreement.reset(). */
+  function flushLiveTailToCommitted() {
+    const liveText = agreement.liveLine;
+    if (!liveText) return;
+    if (looksHallucinated(liveText)) return;
+    const liveTokens = liveText.trim().split(/\s+/).filter(Boolean);
+    if (liveTokens.length > 0) appendCommittedWords(liveTokens);
+  }
+
   async function tick() {
     if (!whisper || !whisperReady || inFlight) {
       scheduleNextTick();
@@ -416,9 +431,14 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     // will confidently hallucinate "you you you you you" / "thanks for
     // watching" / silence-token chains on the trailing silence. This is
     // the actual source of the post-stop / post-pause garbage output.
+    //
+    // CRITICAL: flush the live tail to committed FIRST. Otherwise any
+    // words the user was watching refine in muted italic get nuked
+    // without ever becoming bold — the "skipped words" bug.
     const silenceMs = performance.now() - lastNonSilentMs;
     if (silenceMs > SILENCE_RESET_SECONDS * 1000) {
       if (rolling.length() > 0) {
+        flushLiveTailToCommitted();
         rolling.reset();
         agreement.reset();
         renderLiveLine("");
@@ -456,10 +476,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
       // buffer (keeping the last ~2s so the next tick has audio context
       // and we don't get a perceptible gap before captions resume).
       if (audioWasOverCap) {
-        const liveTokens = agreement.liveLine.trim().split(/\s+/).filter(Boolean);
-        if (liveTokens.length > 0 && !looksHallucinated(agreement.liveLine)) {
-          appendCommittedWords(liveTokens);
-        }
+        flushLiveTailToCommitted();
         agreement.reset();
         // Trim everything EXCEPT the trailing FORCE_COMMIT_KEEP_SECONDS so
         // the next tick has context to transcribe instead of silence-starting.
@@ -602,6 +619,11 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
       clearTimeout(tickTimer);
       tickTimer = null;
     }
+    // Preserve any in-flight live tail words the user was just watching
+    // refine in muted italic — bold-promote them BEFORE wiping state.
+    // Without this, words shown but never agreed-upon (the last 1-2s of
+    // captions) vanish without trace when the user hits Stop.
+    flushLiveTailToCommitted();
     if (captureHandle) {
       captureHandle.stop();
       captureHandle = null;
