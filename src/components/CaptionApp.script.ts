@@ -16,18 +16,33 @@
  * opens on top → user picks → focus jumps to picked tab → PiP is already
  * floating on top, captions stream straight into it. Zero alt-tabs.
  *
- * Users on Firefox/Safari (no Document PiP) fall back to inline rendering
- * automatically. Users who *prefer* inline can flip the toggle pre-start.
+ * ── Rolling-window streaming (v0.1.2) ──
+ * Captured audio is piped continuously into a RollingBuffer. A 600ms
+ * tick scheduler snapshots the buffer and asks the worker to transcribe
+ * the entire window. The transcription feeds the Agreement state machine:
+ * stable prefix gets committed (appended to the caption stream as plain
+ * text), unconfirmed tail shows as a muted-italic "live line" that
+ * refreshes in place each tick. Tick rate adapts to observed inference
+ * latency so slow WebGPU/WASM devices don't backlog the worker.
  */
 
-import { startCapture, type CaptureHandle } from "../lib/audioCapture";
+import {
+  startCapture,
+  createRollingBuffer,
+  TICK_INTERVAL_MS,
+  MIN_AUDIO_SECONDS,
+  type CaptureHandle,
+} from "../lib/audioCapture";
 import { createWhisperClient, type WhisperClient } from "../lib/whisperClient";
 import { openPip, isPipSupported, type PipHandle } from "../lib/pipClient";
 import { detectSupport } from "../lib/browserSupport";
+import { Agreement } from "../lib/agreement";
 
 type AppState = "idle" | "loading" | "active" | "error";
 
 const MAX_CAPTION_LINES = 25;
+const MAX_LINE_WORDS = 14; // committed words per paragraph before starting a new one
+const MAX_TICK_MS = 2000; // hard cap on adaptive tick interval
 const INLINE_PREF_KEY = "captionpip:inline-pref";
 
 (function init() {
@@ -52,6 +67,7 @@ const INLINE_PREF_KEY = "captionpip:inline-pref";
   const captionBox = rootEl.querySelector<HTMLDivElement>("#cp-caption-box")!;
   const captionMount = rootEl.querySelector<HTMLDivElement>("#cp-caption-mount")!;
   const captionStream = rootEl.querySelector<HTMLDivElement>("#cp-caption-stream")!;
+  const captionLive = rootEl.querySelector<HTMLParagraphElement>("#cp-caption-live")!;
   const captionStatus = rootEl.querySelector<HTMLDivElement>("#cp-caption-status")!;
   const captionStatusMsg = rootEl.querySelector<HTMLSpanElement>("#cp-caption-status-msg")!;
   const captionStatusBar = rootEl.querySelector<HTMLDivElement>("#cp-caption-status-bar")!;
@@ -62,17 +78,19 @@ const INLINE_PREF_KEY = "captionpip:inline-pref";
   const supportWarn = rootEl.querySelector<HTMLDivElement>("#cp-support-warn")!;
   const pipPlaceholder = rootEl.querySelector<HTMLDivElement>("#cp-pip-placeholder")!;
 
-  // ── Lifecycle state (not the same as visible state) ──
+  // ── Lifecycle state ──
   let captureHandle: CaptureHandle | null = null;
   let whisper: WhisperClient | null = null;
   let pipHandle: PipHandle | null = null;
   let captionCount = 0;
-  // Queue of audio chunks captured BEFORE whisper finished loading.
-  // Drained when worker emits `ready`. Cap at 5 chunks (~15s) to prevent
-  // unbounded growth if model load fails silently.
-  let pendingAudio: Float32Array[] = [];
   let whisperReady = false;
-  const PENDING_AUDIO_CAP = 5;
+
+  // Rolling-window state
+  const rolling = createRollingBuffer();
+  const agreement = new Agreement();
+  let tickTimer: number | null = null;
+  let inFlight = false;
+  let nextTickMs = TICK_INTERVAL_MS;
 
   // ── Initial support detection ──
   const support = detectSupport();
@@ -142,58 +160,100 @@ const INLINE_PREF_KEY = "captionpip:inline-pref";
     setState("error");
   }
 
-  function appendCaption(text: string) {
-    // On first real caption, clear the placeholder italic line + status banner
+  /**
+   * Append newly-committed words to the caption stream. Words are appended
+   * to the LAST <p> until it hits MAX_LINE_WORDS, then a new <p> starts —
+   * keeps lines visually bounded without doing heavy sentence segmentation.
+   */
+  function appendCommittedWords(words: string[]) {
+    if (words.length === 0) return;
+    // On first commit, clear placeholder + hide status banner
     if (captionCount === 0) {
       captionStream.innerHTML = "";
       hideCaptionStatus();
     }
-    const p = document.createElement("p");
-    p.className = "mb-2";
-    p.textContent = text;
-    captionStream.appendChild(p);
-    captionCount++;
-
-    // Cap line history
+    let lastP = captionStream.lastElementChild as HTMLParagraphElement | null;
+    for (const word of words) {
+      const lastWordCount = lastP
+        ? (lastP.textContent || "").split(/\s+/).filter(Boolean).length
+        : MAX_LINE_WORDS;
+      if (!lastP || lastWordCount >= MAX_LINE_WORDS) {
+        lastP = document.createElement("p");
+        lastP.className = "mb-2";
+        captionStream.appendChild(lastP);
+      }
+      lastP.textContent = (lastP.textContent ? lastP.textContent + " " : "") + word;
+      captionCount++;
+    }
+    // Cap paragraph history
     while (captionStream.childElementCount > MAX_CAPTION_LINES) {
       captionStream.firstElementChild?.remove();
     }
-
-    // Auto-scroll to latest. Use the closest scroll container (the caption box).
-    const scroller = captionBox; // caption box owns the overflow
-    scroller.scrollTop = scroller.scrollHeight;
+    // Auto-scroll to latest
+    captionBox.scrollTop = captionBox.scrollHeight;
   }
 
-  /** Forwards one audio chunk to whisper. If whisper isn't ready yet,
-   *  queues the chunk (capped) so the first seconds of speech aren't lost. */
-  async function processChunk(audio: Float32Array) {
-    if (!whisper) return;
-    if (!whisperReady) {
-      if (pendingAudio.length < PENDING_AUDIO_CAP) {
-        pendingAudio.push(audio);
-      }
-      // else: drop oldest behaviour would also work but cheap to just cap
+  /** Refresh the in-place "live" (uncommitted) line. Hidden when empty. */
+  function renderLiveLine(text: string) {
+    if (!text) {
+      captionLive.classList.add("hidden");
+      captionLive.textContent = "";
       return;
     }
-    try {
-      const text = await whisper.transcribe(audio);
-      if (text) appendCaption(text);
-    } catch (e) {
-      console.warn("[CaptionPip] transcribe failed:", e);
-    }
+    captionLive.textContent = text;
+    captionLive.classList.remove("hidden");
+    // Keep view glued to the live tail
+    captionBox.scrollTop = captionBox.scrollHeight;
   }
 
-  async function drainPendingAudio() {
-    if (!whisper || !whisperReady) return;
-    const queued = pendingAudio;
-    pendingAudio = [];
-    for (const audio of queued) {
-      try {
-        const text = await whisper.transcribe(audio);
-        if (text) appendCaption(text);
-      } catch (e) {
-        console.warn("[CaptionPip] backlog transcribe failed:", e);
+  // ── Tick scheduler ──
+
+  function scheduleNextTick() {
+    if (tickTimer !== null) {
+      clearTimeout(tickTimer);
+    }
+    tickTimer = window.setTimeout(() => {
+      tickTimer = null;
+      void tick();
+    }, nextTickMs);
+  }
+
+  async function tick() {
+    if (!whisper || !whisperReady || inFlight) {
+      scheduleNextTick();
+      return;
+    }
+    if (rolling.durationSeconds() < MIN_AUDIO_SECONDS) {
+      scheduleNextTick();
+      return;
+    }
+
+    inFlight = true;
+    try {
+      const audio = rolling.snapshot();
+      const { text, durationMs } = await whisper.transcribeWindow(audio);
+
+      // Adapt tick interval — never tick faster than 1.2× last inference,
+      // never slower than MAX_TICK_MS. Keeps slow WebGPU/WASM devices
+      // from queueing ticks the worker can't drain.
+      nextTickMs = Math.min(
+        MAX_TICK_MS,
+        Math.max(TICK_INTERVAL_MS, Math.ceil(durationMs * 1.2)),
+      );
+
+      if (text) {
+        agreement.ingest(text);
+        if (agreement.samplesToTrim > 0) rolling.trimFront(agreement.samplesToTrim);
+        if (agreement.newlyCommitted.length > 0) {
+          appendCommittedWords(agreement.newlyCommitted);
+        }
+        renderLiveLine(agreement.liveLine);
       }
+    } catch (e) {
+      console.warn("[CaptionPip] tick failed:", e);
+    } finally {
+      inFlight = false;
+      scheduleNextTick();
     }
   }
 
@@ -207,6 +267,14 @@ const INLINE_PREF_KEY = "captionpip:inline-pref";
   async function startPipeline() {
     setState("loading");
     showLoading("Opening floating window…");
+
+    // Reset all streaming state from any previous run
+    whisperReady = false;
+    rolling.reset();
+    agreement.reset();
+    nextTickMs = TICK_INTERVAL_MS;
+    captionLive.classList.add("hidden");
+    captionLive.textContent = "";
 
     const usePip = isPipSupported() && !inlineToggle.checked;
 
@@ -239,8 +307,6 @@ const INLINE_PREF_KEY = "captionpip:inline-pref";
 
     // ── Step 2: kick off worker init in the background (no await yet) ──
     // We want it loading WHILE the user is in the tab picker, not after.
-    whisperReady = false;
-    pendingAudio = [];
     whisper = createWhisperClient("/whisper-worker.js");
     whisper.onStatus((s) => {
       switch (s.type) {
@@ -252,22 +318,21 @@ const INLINE_PREF_KEY = "captionpip:inline-pref";
           whisperReady = true;
           if (pipHandle) showCaptionStatus(`Listening… (${s.device.toUpperCase()})`);
           else showLoading(`Model ready (${s.device.toUpperCase()}). Asking for audio source…`);
-          // Drain any audio captured while model was loading
-          void drainPendingAudio();
+          // Worker is ready — first tick will fire on the existing schedule
           break;
         case "error":
           showError(s.message);
           break;
       }
     });
-    const initPromise = whisper.init("Xenova/whisper-base").catch((e) => {
+    const initPromise = whisper.init().catch((e) => {
       showError(`Couldn't load Whisper: ${(e as Error).message}`);
     });
 
     // ── Step 3: ask for screen+audio capture IMMEDIATELY (still inside gesture) ──
     try {
       captureHandle = await startCapture({
-        onChunk: (audio) => void processChunk(audio),
+        onAudio: (samples) => rolling.append(samples),
         onError: (err) => showError(err.message),
         onSourceEnded: () => {
           stopPipeline("Source ended.");
@@ -285,25 +350,30 @@ const INLINE_PREF_KEY = "captionpip:inline-pref";
       return;
     }
 
-    // ── Step 4: surface active state. Worker may still be loading in
-    //    background — captions show "Loading Whisper…" until ready. ──
+    // ── Step 4: surface active state + start the tick loop. Worker may
+    //    still be loading; tick() guards on whisperReady. ──
     captionCount = 0;
     if (pipHandle) {
-      // Captions live in PiP; main page just shows the placeholder
       if (!whisperReady) showCaptionStatus("Loading Whisper model… (~75 MB one-time)");
     } else {
-      captionStream.innerHTML = `<p class="text-[var(--color-fg-subtle)] text-sm italic">Listening… first caption usually appears within ~3 seconds.</p>`;
+      captionStream.innerHTML = `<p class="text-[var(--color-fg-subtle)] text-sm italic">Listening… first word usually appears within ~1 second.</p>`;
       if (!whisperReady) showCaptionStatus("Loading Whisper model… (~75 MB one-time)");
     }
     sourceLabel.textContent = `· ${captureHandle.sourceLabel}`;
     setState("active");
 
+    scheduleNextTick();
+
     // Detach: don't await initPromise — UI is already live, worker will
-    // emit status events when it's ready and drainPendingAudio() will fire.
+    // emit status events when it's ready and the next tick will pick up.
     void initPromise;
   }
 
   function stopPipeline(_reason?: string) {
+    if (tickTimer !== null) {
+      clearTimeout(tickTimer);
+      tickTimer = null;
+    }
     if (captureHandle) {
       captureHandle.stop();
       captureHandle = null;
@@ -317,7 +387,10 @@ const INLINE_PREF_KEY = "captionpip:inline-pref";
       pipHandle = null;
     }
     whisperReady = false;
-    pendingAudio = [];
+    inFlight = false;
+    rolling.reset();
+    agreement.reset();
+    renderLiveLine("");
     hideCaptionStatus();
     setState("idle");
   }
@@ -365,6 +438,7 @@ const INLINE_PREF_KEY = "captionpip:inline-pref";
 
   // Ensure clean shutdown if user closes the tab while capturing
   window.addEventListener("pagehide", () => {
+    if (tickTimer !== null) clearTimeout(tickTimer);
     captureHandle?.stop();
     whisper?.dispose();
   });
