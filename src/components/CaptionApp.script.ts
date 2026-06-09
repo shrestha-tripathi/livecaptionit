@@ -69,7 +69,6 @@ const INLINE_PREF_KEY = "captionpip:inline-pref";
   const captionBox = rootEl.querySelector<HTMLDivElement>("#cp-caption-box")!;
   const captionMount = rootEl.querySelector<HTMLDivElement>("#cp-caption-mount")!;
   const captionStream = rootEl.querySelector<HTMLDivElement>("#cp-caption-stream")!;
-  const captionLive = rootEl.querySelector<HTMLParagraphElement>("#cp-caption-live")!;
   const captionStatus = rootEl.querySelector<HTMLDivElement>("#cp-caption-status")!;
   const captionStatusMsg = rootEl.querySelector<HTMLSpanElement>("#cp-caption-status-msg")!;
   const captionStatusBar = rootEl.querySelector<HTMLDivElement>("#cp-caption-status-bar")!;
@@ -183,9 +182,14 @@ const INLINE_PREF_KEY = "captionpip:inline-pref";
   }
 
   /**
-   * Append newly-committed words to the caption stream. Words are appended
-   * to the LAST <p> until it hits MAX_LINE_WORDS, then a new <p> starts —
-   * keeps lines visually bounded without doing heavy sentence segmentation.
+   * Append newly-committed words to the caption stream. Committed words
+   * are rendered bold; the live (uncommitted) tail flows inline after
+   * them as a muted span. When a new paragraph starts, the live tail
+   * follows the cursor to the new paragraph.
+   *
+   * Words are appended to the LAST <p> until it hits MAX_LINE_WORDS,
+   * then a new <p> starts — keeps lines visually bounded without doing
+   * heavy sentence segmentation.
    */
   function appendCommittedWords(words: string[]) {
     if (words.length === 0) return;
@@ -195,41 +199,76 @@ const INLINE_PREF_KEY = "captionpip:inline-pref";
       hideCaptionStatus();
     }
     let lastP = captionStream.lastElementChild as HTMLParagraphElement | null;
+    // If the last paragraph ends with a live-tail span, strip it so we
+    // can append plain text to its end (then re-add the live tail in
+    // renderLiveLine()).
+    if (lastP) stripLiveTail(lastP);
+
     for (const word of words) {
-      const lastWordCount = lastP
-        ? (lastP.textContent || "").split(/\s+/).filter(Boolean).length
+      // Count only the bold (committed) words for line-break math
+      const committedWordCount = lastP
+        ? committedWordsIn(lastP)
         : MAX_LINE_WORDS;
-      if (!lastP || lastWordCount >= MAX_LINE_WORDS) {
+      if (!lastP || committedWordCount >= MAX_LINE_WORDS) {
         lastP = document.createElement("p");
         lastP.className = "mb-2";
         captionStream.appendChild(lastP);
       }
-      lastP.textContent = (lastP.textContent ? lastP.textContent + " " : "") + word;
+      const strong = document.createElement("strong");
+      strong.className = "font-semibold";
+      strong.textContent = (committedWordsIn(lastP) > 0 ? " " : "") + word;
+      lastP.appendChild(strong);
       captionCount++;
     }
     // Cap paragraph history — only show last N committed lines
     while (captionStream.childElementCount > MAX_CAPTION_LINES) {
       captionStream.firstElementChild?.remove();
     }
-    // Auto-scroll to latest. captionStream owns the overflow (not captionBox),
-    // and inside PiP that's still a real overflow:auto container, so
-    // scrollTop = scrollHeight works in both contexts.
     captionStream.scrollTop = captionStream.scrollHeight;
   }
 
-  /** Refresh the in-place "live" (uncommitted) line. Hidden when empty. */
+  /** Count the number of committed (<strong>) word elements in a paragraph. */
+  function committedWordsIn(p: HTMLParagraphElement): number {
+    return p.querySelectorAll("strong").length;
+  }
+
+  /** Remove the muted live-tail span from a paragraph if it has one. */
+  function stripLiveTail(p: HTMLParagraphElement) {
+    const tail = p.querySelector(":scope > span.live-tail");
+    if (tail) tail.remove();
+  }
+
+  /**
+   * Refresh the in-place "live" (uncommitted) tail. Appends as a muted
+   * span at the END of the current (last) paragraph so committed +
+   * live read as one continuous sentence with two visual weights.
+   */
   function renderLiveLine(text: string) {
+    // Always start by clearing the previous tail (from any paragraph,
+    // in case the cursor moved to a new line on the last commit).
+    captionStream.querySelectorAll<HTMLSpanElement>("span.live-tail").forEach((el) => el.remove());
+
     if (!text) {
-      captionLive.classList.add("hidden");
-      captionLive.textContent = "";
+      captionStream.scrollTop = captionStream.scrollHeight;
       return;
     }
-    captionLive.textContent = text;
-    captionLive.classList.remove("hidden");
-    // Live line sits OUTSIDE the scrollable stream now (pinned at the
-    // bottom of the caption box), so we keep the stream scrolled to
-    // its own bottom so the most-recent committed line is visible
-    // right above the live line.
+
+    let lastP = captionStream.lastElementChild as HTMLParagraphElement | null;
+    // No committed text yet → first run, hide placeholder + create a fresh paragraph
+    if (!lastP || lastP.tagName !== "P" || lastP.querySelector("strong") === null) {
+      if (captionCount === 0) {
+        captionStream.innerHTML = "";
+        hideCaptionStatus();
+      }
+      lastP = document.createElement("p");
+      lastP.className = "mb-2";
+      captionStream.appendChild(lastP);
+    }
+    const span = document.createElement("span");
+    span.className = "live-tail text-[var(--color-fg-subtle)] font-normal";
+    span.textContent = (committedWordsIn(lastP) > 0 ? " " : "") + text;
+    lastP.appendChild(span);
+
     captionStream.scrollTop = captionStream.scrollHeight;
   }
 
@@ -317,8 +356,7 @@ const INLINE_PREF_KEY = "captionpip:inline-pref";
     rolling.reset();
     agreement.reset();
     nextTickMs = TICK_INTERVAL_MS;
-    captionLive.classList.add("hidden");
-    captionLive.textContent = "";
+    captionStream.innerHTML = "";
 
     const usePip = isPipSupported() && !inlineToggle.checked;
 
