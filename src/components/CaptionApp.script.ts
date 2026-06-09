@@ -52,21 +52,23 @@ const INLINE_PREF_KEY = "captionpip:inline-pref";
 const PIP_PREFS_KEY = "captionpip:pip-prefs";
 
 interface PipPrefs {
-  width: number;
-  height: number;
-  opacity: number; // 0.2 – 1.0
+  /** Width as percentage of screen.width (1–100). */
+  widthPct: number;
+  /** Height as percentage of screen.height (1–100). */
+  heightPct: number;
 }
-const PIP_DEFAULTS: PipPrefs = { width: 480, height: 260, opacity: 1 };
+const PIP_DEFAULTS: PipPrefs = { widthPct: 60, heightPct: 18 };
 
 function loadPipPrefs(): PipPrefs {
   try {
     const raw = localStorage.getItem(PIP_PREFS_KEY);
     if (!raw) return { ...PIP_DEFAULTS };
     const parsed = JSON.parse(raw);
+    // Forward-compat: ignore any legacy px / opacity fields the old
+    // schema had — only widthPct + heightPct are read here.
     return {
-      width: clamp(Number(parsed.width) || PIP_DEFAULTS.width, 320, 900),
-      height: clamp(Number(parsed.height) || PIP_DEFAULTS.height, 160, 600),
-      opacity: clamp(Number(parsed.opacity) || PIP_DEFAULTS.opacity, 0.2, 1),
+      widthPct: clamp(Number(parsed.widthPct) || PIP_DEFAULTS.widthPct, 15, 100),
+      heightPct: clamp(Number(parsed.heightPct) || PIP_DEFAULTS.heightPct, 10, 80),
     };
   } catch {
     return { ...PIP_DEFAULTS };
@@ -79,6 +81,22 @@ function savePipPrefs(p: PipPrefs) {
 }
 function clamp(n: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, n));
+}
+
+/** Resolve the user's percentage prefs to pixel dimensions based on the
+ *  current screen. We use window.screen (not innerWidth) so the size is
+ *  relative to the OS display, not the browser viewport — gives the user
+ *  a consistent "% of my monitor" mental model regardless of how big
+ *  their browser window is. */
+function prefsToPixels(p: PipPrefs): { width: number; height: number } {
+  // Some users have multi-monitor setups; screen.availWidth excludes
+  // OS taskbars / docks so the PiP doesn't get clipped behind them.
+  const screenW = (window.screen && window.screen.availWidth) || window.innerWidth || 1280;
+  const screenH = (window.screen && window.screen.availHeight) || window.innerHeight || 720;
+  return {
+    width: Math.max(200, Math.round((p.widthPct / 100) * screenW)),
+    height: Math.max(120, Math.round((p.heightPct / 100) * screenH)),
+  };
 }
 
 (function init() {
@@ -116,10 +134,9 @@ function clamp(n: number, lo: number, hi: number) {
   // ── PiP preferences (collapsible panel on idle screen) ──
   const prefWidthInput = rootEl.querySelector<HTMLInputElement>("#cp-pref-width")!;
   const prefHeightInput = rootEl.querySelector<HTMLInputElement>("#cp-pref-height")!;
-  const prefOpacityInput = rootEl.querySelector<HTMLInputElement>("#cp-pref-opacity")!;
   const prefWidthVal = rootEl.querySelector<HTMLSpanElement>("#cp-pref-width-val")!;
   const prefHeightVal = rootEl.querySelector<HTMLSpanElement>("#cp-pref-height-val")!;
-  const prefOpacityVal = rootEl.querySelector<HTMLSpanElement>("#cp-pref-opacity-val")!;
+  const prefPixels = rootEl.querySelector<HTMLParagraphElement>("#cp-pref-pixels")!;
   const prefResetBtn = rootEl.querySelector<HTMLButtonElement>("#cp-pref-reset")!;
 
   // ── Lifecycle state ──
@@ -169,41 +186,37 @@ function clamp(n: number, lo: number, hi: number) {
   }
 
   // ── PiP prefs: load saved values, render into the form, persist on change.
-  //    When a session is active, slider changes ALSO update the live PiP. ──
+  //    Pixel preview updates live so the user sees exactly what size they'll get. ──
   let pipPrefs: PipPrefs = loadPipPrefs();
   function renderPrefsUI() {
-    prefWidthInput.value = String(pipPrefs.width);
-    prefHeightInput.value = String(pipPrefs.height);
-    prefOpacityInput.value = String(Math.round(pipPrefs.opacity * 100));
-    prefWidthVal.textContent = `${pipPrefs.width} px`;
-    prefHeightVal.textContent = `${pipPrefs.height} px`;
-    prefOpacityVal.textContent = `${Math.round(pipPrefs.opacity * 100)}%`;
+    prefWidthInput.value = String(pipPrefs.widthPct);
+    prefHeightInput.value = String(pipPrefs.heightPct);
+    prefWidthVal.textContent = `${pipPrefs.widthPct}%`;
+    prefHeightVal.textContent = `${pipPrefs.heightPct}%`;
+    const px = prefsToPixels(pipPrefs);
+    prefPixels.textContent = `≈ ${px.width} × ${px.height} px at your current screen`;
   }
   renderPrefsUI();
   prefWidthInput.addEventListener("input", () => {
-    pipPrefs.width = clamp(Number(prefWidthInput.value), 320, 900);
-    prefWidthVal.textContent = `${pipPrefs.width} px`;
+    pipPrefs.widthPct = clamp(Number(prefWidthInput.value), 15, 100);
+    prefWidthVal.textContent = `${pipPrefs.widthPct}%`;
+    const px = prefsToPixels(pipPrefs);
+    prefPixels.textContent = `≈ ${px.width} × ${px.height} px at your current screen`;
     savePipPrefs(pipPrefs);
-    // Note: width/height take effect on NEXT PiP open — browsers don't
-    // expose a resize-PiP API to opener context.
+    // Note: takes effect on NEXT PiP open — browsers don't expose
+    // a resize-PiP API to opener context.
   });
   prefHeightInput.addEventListener("input", () => {
-    pipPrefs.height = clamp(Number(prefHeightInput.value), 160, 600);
-    prefHeightVal.textContent = `${pipPrefs.height} px`;
+    pipPrefs.heightPct = clamp(Number(prefHeightInput.value), 10, 80);
+    prefHeightVal.textContent = `${pipPrefs.heightPct}%`;
+    const px = prefsToPixels(pipPrefs);
+    prefPixels.textContent = `≈ ${px.width} × ${px.height} px at your current screen`;
     savePipPrefs(pipPrefs);
-  });
-  prefOpacityInput.addEventListener("input", () => {
-    pipPrefs.opacity = clamp(Number(prefOpacityInput.value) / 100, 0.2, 1);
-    prefOpacityVal.textContent = `${Math.round(pipPrefs.opacity * 100)}%`;
-    savePipPrefs(pipPrefs);
-    // Live-apply if a PiP window is currently open
-    if (pipHandle) pipHandle.setOpacity(pipPrefs.opacity);
   });
   prefResetBtn.addEventListener("click", () => {
     pipPrefs = { ...PIP_DEFAULTS };
     savePipPrefs(pipPrefs);
     renderPrefsUI();
-    if (pipHandle) pipHandle.setOpacity(pipPrefs.opacity);
   });
 
   /**
@@ -490,12 +503,12 @@ function clamp(n: number, lo: number, hi: number) {
     // ── Step 1: open PiP FIRST (must be inside user gesture) ──
     if (usePip) {
       try {
+        const { width, height } = prefsToPixels(pipPrefs);
         pipHandle = await openPip({
           movableEl: captionBox,
           homeMount: captionMount,
-          width: pipPrefs.width,
-          height: pipPrefs.height,
-          opacity: pipPrefs.opacity,
+          width,
+          height,
           onClose: () => {
             pipHandle = null;
             setPipMode(false);
@@ -626,12 +639,12 @@ function clamp(n: number, lo: number, hi: number) {
       return;
     }
     try {
+      const { width, height } = prefsToPixels(pipPrefs);
       pipHandle = await openPip({
         movableEl: captionBox,
         homeMount: captionMount,
-        width: pipPrefs.width,
-        height: pipPrefs.height,
-        opacity: pipPrefs.opacity,
+        width,
+        height,
         onClose: () => {
           pipHandle = null;
           setPipMode(false);

@@ -13,8 +13,6 @@
 export interface PipHandle {
   pipWindow: Window;
   close: () => void;
-  /** Update the idle (non-hover) opacity in place. */
-  setOpacity: (opacity: number) => void;
 }
 
 export interface PipOpenOptions {
@@ -27,9 +25,6 @@ export interface PipOpenOptions {
   height?: number;
   /** If true, Chrome hides the "back to opener" button. Default false. */
   disallowReturnToOpener?: boolean;
-  /** Initial opacity (0.2 – 1.0). Body becomes fully opaque on hover so
-   *  controls stay easy to click. Default 1.0. */
-  opacity?: number;
   /** Fired after the user (or browser) closes the PiP window. */
   onClose?: () => void;
 }
@@ -74,22 +69,14 @@ export async function openPip(options: PipOpenOptions): Promise<PipHandle> {
   const theme = document.documentElement.getAttribute("data-theme");
   if (theme) pipWindow.document.documentElement.setAttribute("data-theme", theme);
 
-  // Tag the PiP <body> + base styling. Note: bg is set to transparent by
-  // the injected stylesheet below (for native-caption feel over videos).
+  // Tag the PiP <body> + base styling. Layout-only inline styles —
+  // colors come from the injected stylesheet below so the theme switch
+  // (light/dark via [data-theme]) works inside PiP just like on the
+  // main page.
   pipWindow.document.body.classList.add("pip-window");
   pipWindow.document.body.style.margin = "0";
-  pipWindow.document.body.style.color = "var(--color-fg)";
   pipWindow.document.body.style.fontFamily = "var(--font-sans)";
 
-  // Belt-and-suspenders transparency: set inline styles on BOTH html and
-  // body directly, AND inject a stylesheet. Chrome's PiP window has UA
-  // styles that sometimes win against pure CSS, and the document root
-  // background is the load-bearing surface that decides whether the
-  // window looks "translucent" at all.
-  pipWindow.document.documentElement.style.background = "transparent";
-  pipWindow.document.documentElement.style.backgroundColor = "transparent";
-  pipWindow.document.body.style.background = "transparent";
-  pipWindow.document.body.style.backgroundColor = "transparent";
   // Tell the browser this surface supports both schemes so it doesn't
   // paint a default white background based on prefers-color-scheme.
   const colorSchemeMeta = pipWindow.document.createElement("meta");
@@ -97,66 +84,72 @@ export async function openPip(options: PipOpenOptions): Promise<PipHandle> {
   colorSchemeMeta.content = "dark light";
   pipWindow.document.head.appendChild(colorSchemeMeta);
 
-  // ── Opacity (user-configurable, native-caption style) ──
-  // The opacity slider controls the caption BOX's background alpha
-  // — NOT the content opacity. Text stays full white so it stays
-  // readable; the dark panel fades to let the video underneath show
-  // through. Mirrors how YouTube / Live Caption / VLC subtitles work.
-  // Live-mutate via --pip-opacity CSS var; setOpacity() updates it.
-  const initialOpacity = Math.max(0.2, Math.min(1, options.opacity ?? 1));
-  pipWindow.document.body.style.setProperty("--pip-opacity", String(initialOpacity));
-
-  // Inject PiP-specific styles: transparent window, dark translucent
-  // caption box that fills the viewport edge-to-edge, hover-only
-  // controls, text-shadow for over-video legibility.
+  // Inject PiP-specific styles: surface uses the SAME theme tokens as
+  // the main site so light/dark toggles drive the PiP look. Header
+  // (LIVE + controls) fades in on hover so the box reads as a clean
+  // caption surface most of the time.
   const pipStyle = pipWindow.document.createElement("style");
   pipStyle.textContent = `
-    :root, html, body.pip-window {
-      background: transparent !important;
-      background-color: transparent !important;
+    html, body.pip-window {
+      background: var(--color-bg);
+      color: var(--color-fg);
+      overflow: hidden;
     }
-    html, body.pip-window { overflow: hidden; }
     body.pip-window .cp-caption-box {
-      background: rgba(20, 20, 20, var(--pip-opacity, 1)) !important;
-      background-color: rgba(20, 20, 20, var(--pip-opacity, 1)) !important;
-      color: #ffffff !important;
+      background: var(--color-surface) !important;
+      color: var(--color-fg) !important;
       box-shadow: none !important;
       border-radius: 0 !important;
       height: 100vh !important;
-      transition: background-color 200ms ease-out;
     }
-    /* Text-shadow keeps captions readable even at low opacity over bright video frames */
-    body.pip-window #cp-caption-stream {
-      color: #ffffff !important;
-      text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85), 0 0 8px rgba(0, 0, 0, 0.55);
-      background: transparent !important;
+    /* Captions + live tail follow the theme — bold confirmed in fg,
+       muted live tail in fg-subtle. Light + dark both pass. */
+    body.pip-window #cp-caption-stream { color: var(--color-fg) !important; }
+    body.pip-window #cp-caption-stream p { color: var(--color-fg) !important; }
+    body.pip-window #cp-caption-stream strong {
+      color: var(--color-fg) !important;
+      font-weight: 700;
     }
-    body.pip-window #cp-caption-stream p { color: #ffffff !important; background: transparent !important; }
-    body.pip-window #cp-caption-stream strong { color: #ffffff !important; font-weight: 700; }
-    body.pip-window #cp-caption-stream span.live-tail { color: rgba(255, 255, 255, 0.55) !important; }
-    /* Header (LIVE + Stop) hidden by default in PiP, fades in on hover.
+    body.pip-window #cp-caption-stream span.live-tail {
+      color: var(--color-fg-subtle) !important;
+    }
+    /* Header (LIVE + Stop) hidden by default, fades in on hover.
        Long leave-delay so glancing away doesn't kill controls instantly. */
     body.pip-window .cp-caption-box > header {
       opacity: 0;
       transition: opacity 220ms ease-out 1s;
-      border-bottom-color: rgba(255, 255, 255, 0.15) !important;
-      background: transparent !important;
+      background: var(--color-surface) !important;
+      border-bottom-color: var(--color-line) !important;
     }
     body.pip-window:hover .cp-caption-box > header,
     body.pip-window:focus-within .cp-caption-box > header {
       opacity: 1;
       transition: opacity 120ms ease-out 0s;
     }
-    /* Status banner (loading model etc) — make legible against translucent dark bg */
+    /* Status banner (loading model etc) — uses theme surface-strong */
     body.pip-window #cp-caption-status {
-      background: rgba(255, 255, 255, 0.08) !important;
+      background: var(--color-surface-strong) !important;
     }
     body.pip-window #cp-caption-status,
     body.pip-window #cp-caption-status * {
-      color: rgba(255, 255, 255, 0.9) !important;
+      color: var(--color-fg-muted) !important;
     }
-    /* Source label (the long media-stream id) — keep dim in PiP */
-    body.pip-window #cp-source-label { color: rgba(255, 255, 255, 0.55) !important; }
+    /* Source label (the long media-stream id) — keep dim */
+    body.pip-window #cp-source-label { color: var(--color-fg-subtle) !important; }
+    /* Surface-strong button bg for Pop/Stop, brand-hover for Pop, rec-hover for Stop */
+    body.pip-window #cp-pip-btn,
+    body.pip-window #cp-stop-btn {
+      background: var(--color-surface-strong) !important;
+      color: var(--color-fg) !important;
+    }
+    body.pip-window #cp-pip-btn:hover {
+      background: var(--color-brand) !important;
+      color: #ffffff !important;
+    }
+    body.pip-window #cp-stop-btn:hover {
+      background: var(--color-rec) !important;
+      color: #ffffff !important;
+    }
   `;
   pipWindow.document.head.appendChild(pipStyle);
 
@@ -180,11 +173,18 @@ export async function openPip(options: PipOpenOptions): Promise<PipHandle> {
   // User-driven close path (clicking native X)
   pipWindow.addEventListener("pagehide", close, { once: true });
 
-  /** Live-update the idle opacity without re-opening the PiP window. */
-  const setOpacity = (op: number) => {
-    const clamped = Math.max(0.2, Math.min(1, op));
-    pipWindow.document.body.style.setProperty("--pip-opacity", String(clamped));
-  };
+  // Keep PiP theme in sync with main page theme. Theme toggle on the
+  // main page sets [data-theme] on documentElement — observe and mirror.
+  const themeObserver = new MutationObserver(() => {
+    const t = document.documentElement.getAttribute("data-theme");
+    if (t) pipWindow.document.documentElement.setAttribute("data-theme", t);
+    else pipWindow.document.documentElement.removeAttribute("data-theme");
+  });
+  themeObserver.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["data-theme"],
+  });
+  pipWindow.addEventListener("pagehide", () => themeObserver.disconnect(), { once: true });
 
-  return { pipWindow, close, setOpacity };
+  return { pipWindow, close };
 }
