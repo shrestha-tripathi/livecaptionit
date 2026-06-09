@@ -28,6 +28,7 @@
 
 import {
   startCapture,
+  startMicCapture,
   createRollingBuffer,
   TARGET_SAMPLE_RATE,
   TICK_INTERVAL_MS,
@@ -68,6 +69,19 @@ const INLINE_PREF_KEY = "captionpip:inline-pref";
 const PIP_PREFS_KEY = "captionpip:pip-prefs";
 const MODEL_PREF_KEY = "captionpip:model-pref";
 const CAPTION_STYLE_KEY = "captionpip:caption-style";
+const SOURCE_PREF_KEY = "captionpip:source-pref";
+
+type SourceKind = "tab" | "mic";
+function loadSourcePref(): SourceKind {
+  try {
+    const raw = localStorage.getItem(SOURCE_PREF_KEY);
+    if (raw === "tab" || raw === "mic") return raw;
+  } catch {}
+  return "tab";
+}
+function saveSourcePref(v: SourceKind) {
+  try { localStorage.setItem(SOURCE_PREF_KEY, v); } catch {}
+}
 
 interface CaptionStyle {
   /** Font size scale (0.8 – 2.0). */
@@ -222,6 +236,8 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
   const dlVttBtn = rootEl.querySelector<HTMLButtonElement>("#cp-dl-vtt")!;
   const dlSrtBtn = rootEl.querySelector<HTMLButtonElement>("#cp-dl-srt")!;
   const dlClearBtn = rootEl.querySelector<HTMLButtonElement>("#cp-dl-clear")!;
+  // Source toggle (Tab / Mic) — radios in the idle screen
+  const sourceRadios = rootEl.querySelectorAll<HTMLInputElement>('input[name="cp-source-toggle"]');
 
   // ── Lifecycle state ──
   let captureHandle: CaptureHandle | null = null;
@@ -248,12 +264,27 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
 
   // ── Initial support detection ──
   const support = detectSupport();
+  // Hoist currentSource before support check so we can force-set it to "mic"
+  // when display capture isn't available. Restored to saved pref below if
+  // support is fine.
+  let currentSource: SourceKind = loadSourcePref();
   if (!support.displayMediaAudio) {
+    // No tab-audio capture, but mic mode still works via getUserMedia.
+    // Force mic source + show explainer instead of disabling Start entirely.
     supportWarn.textContent =
-      "Your browser doesn't support screen + audio capture. CaptionPip needs Chrome, Edge, or Brave 116+ on desktop.";
+      "Your browser doesn't support tab/screen audio capture. Microphone-only mode is still available — pick 'Microphone' above.";
     supportWarn.classList.remove("hidden");
-    startBtn.disabled = true;
-    startBtn.classList.add("opacity-50", "cursor-not-allowed");
+    // Force the Tab radio off + Mic radio on (and disable the tab radio).
+    sourceRadios.forEach((r) => {
+      if (r.value === "tab") {
+        r.disabled = true;
+        r.checked = false;
+        const wrap = r.closest("label");
+        if (wrap) wrap.classList.add("opacity-40", "cursor-not-allowed");
+      }
+      if (r.value === "mic") r.checked = true;
+    });
+    currentSource = "mic";
   } else if (!support.documentPip) {
     supportWarn.textContent =
       "Heads-up: your browser doesn't support the floating Pop-out window. Captions will show in this tab instead. (For floating mode, use Chrome, Edge, or Brave 116+.)";
@@ -446,6 +477,17 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     saveCaptionStyle(captionStyle);
     renderStyleUI();
     applyCaptionStyle(captionStyle);
+  });
+
+  // Source toggle: restore saved + persist on change
+  sourceRadios.forEach((r) => {
+    r.checked = (r.value as SourceKind) === currentSource;
+    r.addEventListener("change", () => {
+      if (!r.checked) return;
+      const v = r.value as SourceKind;
+      currentSource = v;
+      saveSourcePref(v);
+    });
   });
 
   /**
@@ -771,9 +813,15 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
         });
         // Caption box is now physically inside PiP. Hide the main-page mount.
         setPipMode(true);
-        // Seed the caption box with a friendly waiting state
-        captionStream.innerHTML = `<p class="text-[var(--color-fg-subtle)] text-sm italic">Waiting for you to pick a tab in the next prompt…</p>`;
-        showCaptionStatus("Opening tab picker…");
+        // Seed the caption box with a friendly waiting state. Copy varies
+        // by source: tab capture has a picker, mic just asks for permission.
+        if (currentSource === "mic") {
+          captionStream.innerHTML = `<p class="text-[var(--color-fg-subtle)] text-sm italic">Waiting for microphone permission…</p>`;
+          showCaptionStatus("Requesting microphone…");
+        } else {
+          captionStream.innerHTML = `<p class="text-[var(--color-fg-subtle)] text-sm italic">Waiting for you to pick a tab in the next prompt…</p>`;
+          showCaptionStatus("Opening tab picker…");
+        }
       } catch (e) {
         // PiP open failed — fall back to inline rendering, don't abort
         console.warn("[CaptionPip] PiP open failed, falling back to inline:", e);
@@ -809,9 +857,10 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
       showError(`Couldn't load Whisper: ${(e as Error).message}`);
     });
 
-    // ── Step 3: ask for screen+audio capture IMMEDIATELY (still inside gesture) ──
+    // ── Step 3: ask for screen+audio capture (or mic) IMMEDIATELY (still inside gesture) ──
     try {
-      captureHandle = await startCapture({
+      const captureFn = currentSource === "mic" ? startMicCapture : startCapture;
+      captureHandle = await captureFn({
         onAudio: (samples) => rolling.append(samples),
         onLevel: (rms) => {
           // RMS callback fires ~10Hz from audioCapture. Record the last

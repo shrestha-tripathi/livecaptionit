@@ -6,7 +6,14 @@
  * v0.1.2 streaming mode: the caller subscribes to `onAudio` and receives
  * ~80ms frames continuously. The parent buffers them in a RollingBuffer
  * (also exported from here) and runs its own tick scheduler to call the
- * Whisper worker. This replaces the v0.1 "chunk every 3 seconds" API.
+ * Whisper worker.
+ *
+ * v0.2.0 adds startMicCapture() — same pipeline but sourced from
+ * getUserMedia(audio) instead of getDisplayMedia. For dictation /
+ * voice notes / "caption your own speech" use cases. Audio constraints
+ * disable echo cancellation + auto gain control so Whisper sees the
+ * raw speech (browser-side AGC mangles the signal in ways the model
+ * wasn't trained on).
  *
  * Stop the capture via the returned `stop()` function — releases mic/tab
  * permission AND closes AudioContext to free resources.
@@ -69,7 +76,63 @@ export async function startCapture(opts: CaptureOptions): Promise<CaptureHandle>
     );
   }
 
-  // Step 3: pipe into AudioContext at 16kHz mono (Whisper's native rate)
+  // Step 3: pipe into AudioContext via shared helper
+  return wireAudioPipeline(audioTracks, sourceLabel, opts);
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// startMicCapture — microphone-only source via getUserMedia (v0.2.0)
+// ────────────────────────────────────────────────────────────────────────
+
+export async function startMicCapture(opts: CaptureOptions): Promise<CaptureHandle> {
+  let stream: MediaStream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        // Critical: disable browser-side speech processing. Whisper is
+        // trained on raw audio; AGC + noise suppression mangle the signal
+        // in ways that hurt accuracy (especially the "metallic" filter that
+        // some browsers apply with echoCancellation: true).
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+      },
+      video: false,
+    });
+  } catch (e) {
+    const msg = (e as Error)?.message || String(e);
+    if (msg.includes("Permission") || msg.includes("denied")) {
+      throw new Error(
+        "Mic permission denied. Click the camera icon in the address bar to allow microphone access, then try again.",
+      );
+    }
+    if (msg.includes("NotFound") || msg.includes("Requested device not found")) {
+      throw new Error("No microphone detected. Plug one in (or check OS audio settings) and try again.");
+    }
+    throw new Error(`Couldn't start microphone: ${msg}`);
+  }
+
+  const audioTracks = stream.getAudioTracks();
+  if (audioTracks.length === 0) {
+    throw new Error("Microphone returned no audio tracks. Check OS permissions.");
+  }
+  const sourceLabel = audioTracks[0].label || "Microphone";
+
+  return wireAudioPipeline(audioTracks, sourceLabel, opts);
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// wireAudioPipeline — shared AudioContext + ScriptProcessor wiring used by
+// both startCapture (display) and startMicCapture (microphone).
+// Extracted in v0.2.0 to avoid duplication when adding the mic source.
+// ────────────────────────────────────────────────────────────────────────
+
+function wireAudioPipeline(
+  audioTracks: MediaStreamTrack[],
+  sourceLabel: string,
+  opts: CaptureOptions,
+): CaptureHandle {
+  // Pipe into AudioContext at 16kHz mono (Whisper's native rate)
   const ctx = new AudioContext({ sampleRate: TARGET_SAMPLE_RATE });
   const ctxRate = ctx.sampleRate;
   const needManualResample = ctxRate !== TARGET_SAMPLE_RATE;
@@ -82,7 +145,7 @@ export async function startCapture(opts: CaptureOptions): Promise<CaptureHandle>
   source.connect(merger);
 
   // ScriptProcessor is deprecated but universally supported; AudioWorklet
-  // upgrade is a v0.2 refactor.
+  // upgrade is a v0.3 refactor.
   const PROCESSOR_BUF = 4096;
   const processor = ctx.createScriptProcessor(PROCESSOR_BUF, 1, 1);
 

@@ -129,6 +129,37 @@ body {
   color: white;
 }
 
+/* Segmented control variant — used for the Source toggle (Tab vs Mic).
+ * Same :has() trick but rendered as a horizontal pill group with the
+ * selected segment getting the brand fill. */
+.cp-segment-radio {
+  position: relative;
+  display: flex;
+  cursor: pointer;
+  user-select: none;
+}
+.cp-segment-radio input[type="radio"] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.cp-segment-radio span {
+  padding: 0.4rem 0.85rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-fg-muted);
+  transition: background 120ms ease-out, color 120ms ease-out;
+}
+.cp-segment-radio:hover span {
+  color: var(--color-fg);
+}
+.cp-segment-radio:has(input:checked) span {
+  background: var(--color-brand);
+  color: white;
+}
+
 /* "LIVE" pulsing dot */
 @keyframes pulse-rec {
   0%, 100% { opacity: 1; transform: scale(1); }
