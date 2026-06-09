@@ -46,6 +46,30 @@
       </div>
     </div>
 
+    {/* Output mode toggle — transcribe (same language) vs translate (→ English) */}
+    <div class="mt-3 flex flex-col items-center gap-1.5">
+      <div class="inline-flex items-center gap-1 p-1 rounded-full bg-[var(--color-surface)] shadow-line">
+        <label class="cp-segment-radio">
+          <input type="radio" name="cp-task-toggle" value="transcribe" checked />
+          <span class="inline-flex items-center gap-1.5">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
+            Transcribe
+          </span>
+        </label>
+        <label class="cp-segment-radio">
+          <input type="radio" name="cp-task-toggle" value="translate" />
+          <span class="inline-flex items-center gap-1.5">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 8l6 6"/><path d="M4 14l6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="M22 22l-5-10-5 10"/><path d="M14 18h6"/></svg>
+            Translate → English
+          </span>
+        </label>
+      </div>
+      <p class="text-[11px] text-[var(--color-fg-subtle)] leading-snug max-w-xs text-center">
+        <span data-task-hint="transcribe">Captions match the spoken language. Default for English content.</span>
+        <span data-task-hint="translate" class="hidden">Any of 99 spoken languages → English captions. Auto-detected.</span>
+      </p>
+    </div>
+
     <div class="mt-4 flex justify-center">
       <label
         id="cp-inline-toggle-wrap"
@@ -260,6 +284,11 @@
           <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider">
             <span class="size-2 rounded-full bg-[var(--color-rec)] rec-dot"></span>
             <span style="color: var(--color-rec)">LIVE</span>
+            <span
+              id="cp-task-badge"
+              class="hidden text-[10px] font-semibold normal-case tracking-normal px-1.5 py-0.5 rounded-md bg-[var(--color-brand)]/15 text-[var(--color-brand)]"
+              title="Output mode"
+            >Translate → EN</span>
             <span class="text-[var(--color-fg-subtle)] font-normal normal-case tracking-normal truncate max-w-[180px]" id="cp-source-label"></span>
           </div>
           <div class="flex items-center gap-1.5 shrink-0">
