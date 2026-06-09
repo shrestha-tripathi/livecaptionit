@@ -28,15 +28,47 @@ const faqJsonLd = {
       name: "Which browsers are supported?",
       acceptedAnswer: {
         "@type": "Answer",
-        text: `<p>v0.1 needs Chrome, Edge, or Brave 116+ on desktop for the full experience (screen + audio capture, WebGPU, picture-in-picture). Firefox and Safari can show captions in-tab but can't pop out into a floating window. Mobile browsers don't support screen capture, so ${site.name} is desktop-only for now.</p>`,
+        text: `<p>Tab/screen capture mode needs Chrome, Edge, or Brave 116+ on desktop. Microphone-only mode works in all modern browsers (Firefox + Safari included). The floating picture-in-picture window is Chromium-only for now. Mobile browsers don't support screen capture, so ${site.name} is desktop-first.</p>`,
       },
     },
     {
       "@type": "Question",
-      name: "Why is there a ~3-second delay before captions appear?",
+      name: "How fast are the captions?",
       acceptedAnswer: {
         "@type": "Answer",
-        text: `<p>Whisper transcribes audio in chunks. We use 3-second windows to balance latency against accuracy — smaller windows have less context and produce more errors. We may add a streaming mode in a future version that surfaces partial captions faster.</p>`,
+        text: `<p>The first word usually appears within ~700ms of speech. ${site.name} uses a rolling-window streaming transcriber: instead of waiting for fixed 3-second chunks, it re-transcribes the recent audio every ~700ms and shows confident words bold + uncertain words muted. Words "solidify in place" as the model becomes confident. Feels like Live Caption / YouTube CC rather than delayed subtitles.</p>`,
+      },
+    },
+    {
+      "@type": "Question",
+      name: "Can I choose between speed and accuracy?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: `<p>Yes. The Whisper model picker on the home page lets you choose Tiny (39 MB, ~2x faster), Base (74 MB, default — balanced), or Small (244 MB, ~10% more accurate but slower). Each model is cached in your browser after the first download. Pick whichever matches your machine + audio quality.</p>`,
+      },
+    },
+    {
+      "@type": "Question",
+      name: "Can I download the transcript?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: `<p>Yes. After you click Stop, three download buttons appear: .txt (plain text), .vtt (WebVTT, for video players that support subtitles), and .srt (SubRip, the universal subtitle format). Timestamps are at segment level (~700-1200ms granularity) — good enough for most use cases, not for frame-perfect subtitle alignment.</p>`,
+      },
+    },
+    {
+      "@type": "Question",
+      name: "Can I use my microphone instead of a tab?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: `<p>Yes. Toggle the "Microphone" source on the home page instead of "Tab / window". Useful for dictation, voice notes, recording your own speech for podcast prep, or captioning a meeting where you are the speaker. ${site.name} disables the browser's echo cancellation and auto-gain control for microphone mode so Whisper sees the raw audio.</p>`,
+      },
+    },
+    {
+      "@type": "Question",
+      name: "Can I customize the caption look?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: `<p>Yes. The "Caption style" panel on the home page lets you adjust font size (80-200%), base font weight (regular / medium / bold), caption position in the floating window (top / middle / bottom), and the text-shadow that boosts legibility when the window sits over bright video. All settings apply live and persist in your browser.</p>`,
       },
     },
     {
@@ -107,7 +139,7 @@ const faqJsonLd = {
           { icon: "📺", label: "Live streams" },
           { icon: "🌐", label: "Foreign content" },
           { icon: "👂", label: "Hearing accessibility" },
-          { icon: "📚", label: "Studying / note-taking" },
+          { icon: "📝", label: "Voice notes & dictation" },
         ].map((u) => (
           <div class="flex items-center gap-2.5 p-3 rounded-md bg-[var(--color-surface)] shadow-line">
             <span class="text-lg" aria-hidden="true">{u.icon}</span>
