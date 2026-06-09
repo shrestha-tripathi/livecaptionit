@@ -46,6 +46,37 @@ const MAX_LINE_WORDS = 12; // committed words per paragraph before starting a ne
 const MAX_TICK_MS = 2000; // hard cap on adaptive tick interval
 const FORCE_COMMIT_KEEP_SECONDS = 2; // keep this much trailing audio after force-commit
 const INLINE_PREF_KEY = "captionpip:inline-pref";
+const PIP_PREFS_KEY = "captionpip:pip-prefs";
+
+interface PipPrefs {
+  width: number;
+  height: number;
+  opacity: number; // 0.2 – 1.0
+}
+const PIP_DEFAULTS: PipPrefs = { width: 480, height: 260, opacity: 1 };
+
+function loadPipPrefs(): PipPrefs {
+  try {
+    const raw = localStorage.getItem(PIP_PREFS_KEY);
+    if (!raw) return { ...PIP_DEFAULTS };
+    const parsed = JSON.parse(raw);
+    return {
+      width: clamp(Number(parsed.width) || PIP_DEFAULTS.width, 320, 900),
+      height: clamp(Number(parsed.height) || PIP_DEFAULTS.height, 160, 600),
+      opacity: clamp(Number(parsed.opacity) || PIP_DEFAULTS.opacity, 0.2, 1),
+    };
+  } catch {
+    return { ...PIP_DEFAULTS };
+  }
+}
+function savePipPrefs(p: PipPrefs) {
+  try {
+    localStorage.setItem(PIP_PREFS_KEY, JSON.stringify(p));
+  } catch {}
+}
+function clamp(n: number, lo: number, hi: number) {
+  return Math.max(lo, Math.min(hi, n));
+}
 
 (function init() {
   const root = document.getElementById("caption-app");
@@ -78,6 +109,15 @@ const INLINE_PREF_KEY = "captionpip:inline-pref";
   const errorMsg = rootEl.querySelector<HTMLParagraphElement>("#cp-error-msg")!;
   const supportWarn = rootEl.querySelector<HTMLDivElement>("#cp-support-warn")!;
   const pipPlaceholder = rootEl.querySelector<HTMLDivElement>("#cp-pip-placeholder")!;
+
+  // ── PiP preferences (collapsible panel on idle screen) ──
+  const prefWidthInput = rootEl.querySelector<HTMLInputElement>("#cp-pref-width")!;
+  const prefHeightInput = rootEl.querySelector<HTMLInputElement>("#cp-pref-height")!;
+  const prefOpacityInput = rootEl.querySelector<HTMLInputElement>("#cp-pref-opacity")!;
+  const prefWidthVal = rootEl.querySelector<HTMLSpanElement>("#cp-pref-width-val")!;
+  const prefHeightVal = rootEl.querySelector<HTMLSpanElement>("#cp-pref-height-val")!;
+  const prefOpacityVal = rootEl.querySelector<HTMLSpanElement>("#cp-pref-opacity-val")!;
+  const prefResetBtn = rootEl.querySelector<HTMLButtonElement>("#cp-pref-reset")!;
 
   // ── Lifecycle state ──
   let captureHandle: CaptureHandle | null = null;
@@ -120,6 +160,44 @@ const INLINE_PREF_KEY = "captionpip:inline-pref";
       } catch {}
     });
   }
+
+  // ── PiP prefs: load saved values, render into the form, persist on change.
+  //    When a session is active, slider changes ALSO update the live PiP. ──
+  let pipPrefs: PipPrefs = loadPipPrefs();
+  function renderPrefsUI() {
+    prefWidthInput.value = String(pipPrefs.width);
+    prefHeightInput.value = String(pipPrefs.height);
+    prefOpacityInput.value = String(Math.round(pipPrefs.opacity * 100));
+    prefWidthVal.textContent = `${pipPrefs.width} px`;
+    prefHeightVal.textContent = `${pipPrefs.height} px`;
+    prefOpacityVal.textContent = `${Math.round(pipPrefs.opacity * 100)}%`;
+  }
+  renderPrefsUI();
+  prefWidthInput.addEventListener("input", () => {
+    pipPrefs.width = clamp(Number(prefWidthInput.value), 320, 900);
+    prefWidthVal.textContent = `${pipPrefs.width} px`;
+    savePipPrefs(pipPrefs);
+    // Note: width/height take effect on NEXT PiP open — browsers don't
+    // expose a resize-PiP API to opener context.
+  });
+  prefHeightInput.addEventListener("input", () => {
+    pipPrefs.height = clamp(Number(prefHeightInput.value), 160, 600);
+    prefHeightVal.textContent = `${pipPrefs.height} px`;
+    savePipPrefs(pipPrefs);
+  });
+  prefOpacityInput.addEventListener("input", () => {
+    pipPrefs.opacity = clamp(Number(prefOpacityInput.value) / 100, 0.2, 1);
+    prefOpacityVal.textContent = `${Math.round(pipPrefs.opacity * 100)}%`;
+    savePipPrefs(pipPrefs);
+    // Live-apply if a PiP window is currently open
+    if (pipHandle) pipHandle.setOpacity(pipPrefs.opacity);
+  });
+  prefResetBtn.addEventListener("click", () => {
+    pipPrefs = { ...PIP_DEFAULTS };
+    savePipPrefs(pipPrefs);
+    renderPrefsUI();
+    if (pipHandle) pipHandle.setOpacity(pipPrefs.opacity);
+  });
 
   /**
    * Single source of truth for "is the caption box currently inside PiP?".
@@ -366,8 +444,9 @@ const INLINE_PREF_KEY = "captionpip:inline-pref";
         pipHandle = await openPip({
           movableEl: captionBox,
           homeMount: captionMount,
-          width: 480,
-          height: 260,
+          width: pipPrefs.width,
+          height: pipPrefs.height,
+          opacity: pipPrefs.opacity,
           onClose: () => {
             pipHandle = null;
             setPipMode(false);
@@ -495,8 +574,9 @@ const INLINE_PREF_KEY = "captionpip:inline-pref";
       pipHandle = await openPip({
         movableEl: captionBox,
         homeMount: captionMount,
-        width: 480,
-        height: 260,
+        width: pipPrefs.width,
+        height: pipPrefs.height,
+        opacity: pipPrefs.opacity,
         onClose: () => {
           pipHandle = null;
           setPipMode(false);

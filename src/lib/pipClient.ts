@@ -13,6 +13,8 @@
 export interface PipHandle {
   pipWindow: Window;
   close: () => void;
+  /** Update the idle (non-hover) opacity in place. */
+  setOpacity: (opacity: number) => void;
 }
 
 export interface PipOpenOptions {
@@ -25,6 +27,9 @@ export interface PipOpenOptions {
   height?: number;
   /** If true, Chrome hides the "back to opener" button. Default false. */
   disallowReturnToOpener?: boolean;
+  /** Initial opacity (0.2 – 1.0). Body becomes fully opaque on hover so
+   *  controls stay easy to click. Default 1.0. */
+  opacity?: number;
   /** Fired after the user (or browser) closes the PiP window. */
   onClose?: () => void;
 }
@@ -76,6 +81,20 @@ export async function openPip(options: PipOpenOptions): Promise<PipHandle> {
   pipWindow.document.body.style.color = "var(--color-fg)";
   pipWindow.document.body.style.fontFamily = "var(--font-sans)";
 
+  // ── Opacity (user-configurable) ──
+  // Idle opacity comes from CSS var --pip-opacity so we can mutate it
+  // live via setOpacity() without touching layout. The body fades to
+  // that value, then snaps back to 1.0 on hover so the user can still
+  // see controls clearly when they reach for Stop or interact.
+  const initialOpacity = Math.max(0.2, Math.min(1, options.opacity ?? 1));
+  pipWindow.document.body.style.setProperty("--pip-opacity", String(initialOpacity));
+  pipWindow.document.body.style.opacity = "var(--pip-opacity)";
+  pipWindow.document.body.style.transition = "opacity 200ms ease-out";
+  const hoverStyle = pipWindow.document.createElement("style");
+  hoverStyle.textContent =
+    "body.pip-window:hover { opacity: 1 !important; }";
+  pipWindow.document.head.appendChild(hoverStyle);
+
   // MOVE the element into PiP (this is the magic — same JS realm, same nodes)
   pipWindow.document.body.appendChild(options.movableEl);
 
@@ -96,5 +115,11 @@ export async function openPip(options: PipOpenOptions): Promise<PipHandle> {
   // User-driven close path (clicking native X)
   pipWindow.addEventListener("pagehide", close, { once: true });
 
-  return { pipWindow, close };
+  /** Live-update the idle opacity without re-opening the PiP window. */
+  const setOpacity = (op: number) => {
+    const clamped = Math.max(0.2, Math.min(1, op));
+    pipWindow.document.body.style.setProperty("--pip-opacity", String(clamped));
+  };
+
+  return { pipWindow, close, setOpacity };
 }
