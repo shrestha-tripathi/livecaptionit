@@ -15,10 +15,9 @@
 export const TARGET_SAMPLE_RATE = 16_000;
 
 // Rolling-window streaming constants (v0.1.2). See SPEC.md §1.2.5.
-export const ROLLING_MAX_SECONDS = 15; // hard ceiling — buffer never grows past this
-export const ROLLING_TARGET_SECONDS = 10; // soft target after trim
-export const TICK_INTERVAL_MS = 600; // ~1.67 ticks/sec
-export const MIN_AUDIO_SECONDS = 0.5; // don't transcribe until we have this much
+export const ROLLING_SOFT_CAP_SECONDS = 8; // force-commit + reset when over this
+export const TICK_INTERVAL_MS = 700; // ~1.4 ticks/sec — leaves headroom for inference
+export const MIN_AUDIO_SECONDS = 1.5; // wait for enough context before first tick
 
 export interface CaptureHandle {
   stop: () => void;
@@ -152,35 +151,40 @@ export async function startCapture(opts: CaptureOptions): Promise<CaptureHandle>
 // ────────────────────────────────────────────────────────────────────────
 
 export interface RollingBuffer {
-  /** Append samples to the buffer. Oldest data is dropped if cap exceeded. */
+  /** Append samples to the buffer (append-only, never auto-trims). */
   append: (samples: Float32Array) => void;
   /** Get an owned copy of current buffer contents (caller may transfer). */
   snapshot: () => Float32Array;
-  /** Drop the first N samples from the front (after agreement commits). */
+  /** Drop the first N samples from the front (only used by reset/force-commit). */
   trimFront: (samples: number) => void;
   /** Current buffer length in samples. */
   length: () => number;
   /** Convenience: current buffer length in seconds at TARGET_SAMPLE_RATE. */
   durationSeconds: () => number;
+  /** Has the buffer reached or exceeded the soft cap? Caller should force-commit + reset. */
+  isOverCap: () => boolean;
   /** Empty the buffer (e.g. on stop or force-commit recovery). */
   reset: () => void;
 }
 
 export function createRollingBuffer(
-  maxSamples = ROLLING_MAX_SECONDS * TARGET_SAMPLE_RATE,
+  maxSamples = ROLLING_SOFT_CAP_SECONDS * TARGET_SAMPLE_RATE,
 ): RollingBuffer {
   let buf: Float32Array = new Float32Array(0);
 
   return {
     append(samples) {
       if (samples.length === 0) return;
+      // APPEND-ONLY. We intentionally do NOT auto-trim at cap because
+      // LocalAgreement-2 requires the buffer's leading audio to stay
+      // stable across ticks — if we silently drop front samples,
+      // Whisper's transcription leading words shift every tick and
+      // the agreement algorithm never fires. Instead, the caller
+      // checks isOverCap() and force-commits when needed.
       const merged = new Float32Array(buf.length + samples.length);
       merged.set(buf, 0);
       merged.set(samples, buf.length);
-      buf =
-        merged.length > maxSamples
-          ? new Float32Array(merged.subarray(merged.length - maxSamples))
-          : merged;
+      buf = merged;
     },
     snapshot() {
       return new Float32Array(buf);
@@ -191,8 +195,6 @@ export function createRollingBuffer(
         buf = new Float32Array(0);
         return;
       }
-      // Force a fresh allocation (no shared underlying ArrayBuffer) so the
-      // worker's transferable from a prior snapshot doesn't haunt us.
       buf = new Float32Array(buf.subarray(samples));
     },
     length() {
@@ -200,6 +202,9 @@ export function createRollingBuffer(
     },
     durationSeconds() {
       return buf.length / TARGET_SAMPLE_RATE;
+    },
+    isOverCap() {
+      return buf.length >= maxSamples;
     },
     reset() {
       buf = new Float32Array(0);

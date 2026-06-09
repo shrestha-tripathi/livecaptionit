@@ -120,6 +120,26 @@ const INLINE_PREF_KEY = "captionpip:inline-pref";
     });
   }
 
+  /**
+   * Single source of truth for "is the caption box currently inside PiP?".
+   * Updates the data attr on the caption box, swaps placeholder visibility
+   * on the main page, AND hides the Pop-out button while inside PiP (you
+   * can't "pop out" what's already popped out — the window's own close
+   * button + the "Stop" button are the right controls there).
+   */
+  function setPipMode(inPip: boolean) {
+    captionBox.dataset.pipMode = inPip ? "true" : "false";
+    if (inPip) {
+      captionMount.classList.add("hidden");
+      pipPlaceholder.classList.remove("hidden");
+      pipBtn.classList.add("hidden");
+    } else {
+      captionMount.classList.remove("hidden");
+      pipPlaceholder.classList.add("hidden");
+      pipBtn.classList.remove("hidden");
+    }
+  }
+
   function setState(state: AppState) {
     rootEl.dataset.state = state;
     panels.idle.classList.toggle("hidden", state !== "idle");
@@ -231,6 +251,7 @@ const INLINE_PREF_KEY = "captionpip:inline-pref";
     inFlight = true;
     try {
       const audio = rolling.snapshot();
+      const audioWasOverCap = rolling.isOverCap();
       const { text, durationMs } = await whisper.transcribeWindow(audio);
 
       // Adapt tick interval — never tick faster than 1.2× last inference,
@@ -243,11 +264,24 @@ const INLINE_PREF_KEY = "captionpip:inline-pref";
 
       if (text) {
         agreement.ingest(text);
-        if (agreement.samplesToTrim > 0) rolling.trimFront(agreement.samplesToTrim);
         if (agreement.newlyCommitted.length > 0) {
           appendCommittedWords(agreement.newlyCommitted);
         }
         renderLiveLine(agreement.liveLine);
+      }
+
+      // Force-commit guard: if buffer has grown past the soft cap and we
+      // STILL haven't committed enough words to drain it via agreement,
+      // promote the entire live hypothesis to committed and reset the
+      // buffer. Better to risk one slightly-wrong line than let the
+      // window grow forever (which would make every transcribe call
+      // re-process the same 20+ seconds of audio and feel hung).
+      if (audioWasOverCap) {
+        const liveTokens = agreement.liveLine.trim().split(/\s+/).filter(Boolean);
+        if (liveTokens.length > 0) appendCommittedWords(liveTokens);
+        agreement.reset();
+        rolling.reset();
+        renderLiveLine("");
       }
     } catch (e) {
       console.warn("[CaptionPip] tick failed:", e);
@@ -288,13 +322,11 @@ const INLINE_PREF_KEY = "captionpip:inline-pref";
           height: 260,
           onClose: () => {
             pipHandle = null;
-            pipPlaceholder.classList.add("hidden");
-            captionMount.classList.remove("hidden");
+            setPipMode(false);
           },
         });
         // Caption box is now physically inside PiP. Hide the main-page mount.
-        captionMount.classList.add("hidden");
-        pipPlaceholder.classList.remove("hidden");
+        setPipMode(true);
         // Seed the caption box with a friendly waiting state
         captionStream.innerHTML = `<p class="text-[var(--color-fg-subtle)] text-sm italic">Waiting for you to pick a tab in the next prompt…</p>`;
         showCaptionStatus("Opening tab picker…");
@@ -311,12 +343,12 @@ const INLINE_PREF_KEY = "captionpip:inline-pref";
     whisper.onStatus((s) => {
       switch (s.type) {
         case "loading":
-          if (pipHandle) showCaptionStatus(s.message, s.progress);
+          if (pipHandle || captureHandle) showCaptionStatus(s.message, s.progress);
           else showLoading(s.message, s.progress);
           break;
         case "ready":
           whisperReady = true;
-          if (pipHandle) showCaptionStatus(`Listening… (${s.device.toUpperCase()})`);
+          if (pipHandle || captureHandle) showCaptionStatus("Listening…");
           else showLoading(`Model ready (${s.device.toUpperCase()}). Asking for audio source…`);
           // Worker is ready — first tick will fire on the existing schedule
           break;
@@ -353,11 +385,12 @@ const INLINE_PREF_KEY = "captionpip:inline-pref";
     // ── Step 4: surface active state + start the tick loop. Worker may
     //    still be loading; tick() guards on whisperReady. ──
     captionCount = 0;
-    if (pipHandle) {
-      if (!whisperReady) showCaptionStatus("Loading Whisper model… (~75 MB one-time)");
+    // Clear the "Waiting for picker" seed text now that user has picked.
+    captionStream.innerHTML = "";
+    if (whisperReady) {
+      showCaptionStatus("Listening…");
     } else {
-      captionStream.innerHTML = `<p class="text-[var(--color-fg-subtle)] text-sm italic">Listening… first word usually appears within ~1 second.</p>`;
-      if (!whisperReady) showCaptionStatus("Loading Whisper model… (~75 MB one-time)");
+      showCaptionStatus("Loading Whisper model… (~75 MB one-time)");
     }
     sourceLabel.textContent = `· ${captureHandle.sourceLabel}`;
     setState("active");
@@ -418,12 +451,10 @@ const INLINE_PREF_KEY = "captionpip:inline-pref";
         height: 260,
         onClose: () => {
           pipHandle = null;
-          pipPlaceholder.classList.add("hidden");
-          captionMount.classList.remove("hidden");
+          setPipMode(false);
         },
       });
-      captionMount.classList.add("hidden");
-      pipPlaceholder.classList.remove("hidden");
+      setPipMode(true);
     } catch (e) {
       console.error("[CaptionPip] PiP open failed:", e);
       alert((e as Error).message);
