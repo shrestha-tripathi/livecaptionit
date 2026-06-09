@@ -46,6 +46,14 @@ import {
 import { openPip, isPipSupported, type PipHandle } from "../lib/pipClient";
 import { detectSupport } from "../lib/browserSupport";
 import { Agreement } from "../lib/agreement";
+import {
+  formatTxt,
+  formatVtt,
+  formatSrt,
+  defaultFilename,
+  downloadString,
+  type TranscriptSegment,
+} from "../lib/transcript";
 
 type AppState = "idle" | "loading" | "active" | "error";
 
@@ -209,6 +217,11 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
   const styleFontScaleVal = rootEl.querySelector<HTMLSpanElement>("#cp-style-fontscale-val")!;
   const styleShadow = rootEl.querySelector<HTMLInputElement>("#cp-style-shadow")!;
   const styleResetBtn = rootEl.querySelector<HTMLButtonElement>("#cp-style-reset")!;
+  const downloadBar = rootEl.querySelector<HTMLDivElement>("#cp-download-bar")!;
+  const dlTxtBtn = rootEl.querySelector<HTMLButtonElement>("#cp-dl-txt")!;
+  const dlVttBtn = rootEl.querySelector<HTMLButtonElement>("#cp-dl-vtt")!;
+  const dlSrtBtn = rootEl.querySelector<HTMLButtonElement>("#cp-dl-srt")!;
+  const dlClearBtn = rootEl.querySelector<HTMLButtonElement>("#cp-dl-clear")!;
 
   // ── Lifecycle state ──
   let captureHandle: CaptureHandle | null = null;
@@ -227,6 +240,11 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
   // We keep a sliding window of recent RMS values to know "how long has it
   // been quiet?" so we can prevent Whisper from hallucinating on silent audio.
   let lastNonSilentMs = 0;
+  // Transcript recording — every committed batch gets pushed here with its
+  // timestamp relative to sessionStartMs. Cleared on Start/Reset, used by
+  // the download buttons that appear in the active panel after Stop.
+  let transcriptSegments: TranscriptSegment[] = [];
+  let sessionStartMs = 0;
 
   // ── Initial support detection ──
   const support = detectSupport();
@@ -502,6 +520,11 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
    */
   function appendCommittedWords(words: string[]) {
     if (words.length === 0) return;
+    // Record into transcript log first (the source of truth for downloads).
+    transcriptSegments.push({
+      words: [...words],
+      tMs: sessionStartMs ? performance.now() - sessionStartMs : 0,
+    });
     // On first commit, clear placeholder + hide status banner
     if (captionCount === 0) {
       captionStream.innerHTML = "";
@@ -720,6 +743,10 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     rolling.reset();
     agreement.reset();
     nextTickMs = TICK_INTERVAL_MS;
+    // New session — fresh transcript log.
+    transcriptSegments = [];
+    sessionStartMs = performance.now();
+    downloadBar.classList.add("hidden");
     // Treat the moment Start was clicked as "fresh audio incoming" so the
     // silence-reset guard doesn't fire on the first tick before any RMS
     // callbacks have come in.
@@ -857,7 +884,17 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     agreement.reset();
     renderLiveLine("");
     hideCaptionStatus();
-    setState("idle");
+    // If the user captured any words this session, surface the download
+    // buttons + KEEP the active panel visible so they can read what they
+    // captured AND save it. Reset button (Clear) clears everything.
+    if (transcriptSegments.length > 0) {
+      downloadBar.classList.remove("hidden");
+      sourceLabel.textContent = "";
+      // Stay on "active" panel so caption history is still visible
+    } else {
+      // Nothing captured (e.g. they cancelled the picker) — back to idle
+      setState("idle");
+    }
   }
 
   /**
@@ -899,6 +936,27 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
   stopBtn.addEventListener("click", () => stopPipeline("User stop"));
   pipBtn.addEventListener("click", () => void togglePip());
   resetBtn.addEventListener("click", () => setState("idle"));
+
+  // Download buttons (visible after Stop when transcript has content)
+  dlTxtBtn.addEventListener("click", () => {
+    if (transcriptSegments.length === 0) return;
+    downloadString(defaultFilename("txt"), formatTxt(transcriptSegments), "text/plain;charset=utf-8");
+  });
+  dlVttBtn.addEventListener("click", () => {
+    if (transcriptSegments.length === 0) return;
+    downloadString(defaultFilename("vtt"), formatVtt(transcriptSegments), "text/vtt;charset=utf-8");
+  });
+  dlSrtBtn.addEventListener("click", () => {
+    if (transcriptSegments.length === 0) return;
+    downloadString(defaultFilename("srt"), formatSrt(transcriptSegments), "application/x-subrip;charset=utf-8");
+  });
+  dlClearBtn.addEventListener("click", () => {
+    transcriptSegments = [];
+    captionStream.innerHTML = "";
+    captionCount = 0;
+    downloadBar.classList.add("hidden");
+    setState("idle");
+  });
 
   // Ensure clean shutdown if user closes the tab while capturing
   window.addEventListener("pagehide", () => {

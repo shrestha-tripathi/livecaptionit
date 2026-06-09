@@ -288,6 +288,40 @@
     <p class="mt-3 text-xs text-[var(--color-fg-subtle)] text-center">
       Bold text = confirmed. Muted text at the end = still being heard.
     </p>
+
+    {/* Download transcript buttons — only visible after Stop when we have
+        a recorded transcript. Filled + shown by CaptionApp.script.ts. */}
+    <div id="cp-download-bar" class="hidden mt-4 flex flex-col items-center gap-2">
+      <p class="text-xs text-[var(--color-fg-muted)]">Save the transcript:</p>
+      <div class="inline-flex items-center gap-1.5">
+        <button
+          id="cp-dl-txt"
+          type="button"
+          class="text-xs font-semibold px-3 py-1.5 rounded-md bg-[var(--color-surface)] hover:bg-[var(--color-brand)] hover:text-white transition-colors shadow-line"
+        >.txt</button>
+        <button
+          id="cp-dl-vtt"
+          type="button"
+          class="text-xs font-semibold px-3 py-1.5 rounded-md bg-[var(--color-surface)] hover:bg-[var(--color-brand)] hover:text-white transition-colors shadow-line"
+          title="WebVTT — for video players that support subtitles"
+        >.vtt</button>
+        <button
+          id="cp-dl-srt"
+          type="button"
+          class="text-xs font-semibold px-3 py-1.5 rounded-md bg-[var(--color-surface)] hover:bg-[var(--color-brand)] hover:text-white transition-colors shadow-line"
+          title="SubRip — universal subtitle format"
+        >.srt</button>
+        <button
+          id="cp-dl-clear"
+          type="button"
+          class="text-xs font-semibold px-3 py-1.5 rounded-md text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-strong)] transition-colors"
+          title="Clear transcript and return to start screen"
+        >Clear</button>
+      </div>
+      <p class="text-[10px] text-[var(--color-fg-subtle)]">
+        Timestamps are segment-level (~600-1200ms granularity), not word-level.
+      </p>
+    </div>
   </div>
 
   {/* ────────────── ERROR PANEL ────────────── */}
