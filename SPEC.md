@@ -1,10 +1,10 @@
 # CaptionPip — Spec
 
-**Status:** v0.1 shipped (functional core) · v0.1.1 shipped (PiP-first flow) · **v0.1.2 IN PROGRESS** (rolling-window real-time captions)
-**Date:** 2026-06-08 (v0.1) · 2026-06-09 (v0.1.1) · 2026-06-09 (v0.1.2 spec)
+**Status:** v0.1 shipped · v0.1.1 PiP-first flow shipped · v0.1.2 rolling-window shipped · v0.1.3 polish shipped · **v0.2.0 IN PROGRESS** (polish release)
+**Date:** 2026-06-08 (v0.1) · 2026-06-09 (v0.1.1, v0.1.2, v0.1.3, v0.2.0 spec)
 **Working domain:** `captionpip.com` (RDAP-verified available — buy before commit if you keep the name)
 **Repo:** `github.com/shrestha-tripathi/captionpip` (private until shipped)
-**Ship target:** v0.1.2 ships this week; v0.2 (language picker + IndicWhisper) next weekend
+**Ship target:** v0.2.0 this week
 
 ## Changelog
 
@@ -12,7 +12,9 @@
 |---|---|---|---|
 | v0.1 | 2026-06-08 | Functional prototype: capture → worker → caption box, light/dark, trust pages, SEO baseline | `f1c7305` |
 | v0.1.1 | 2026-06-09 | Worker hang fix (onnx-community model + timeout); PiP-first flow (zero alt-tabs) | `15797ca`, `e807289` |
-| v0.1.2 | 2026-06-09 | **Rolling-window real-time captions** — first word within ~700ms, in-place refresh, LocalAgreement-2 commit | _this spec_ |
+| v0.1.2 | 2026-06-09 | **Rolling-window real-time captions** — first word within ~700ms, in-place refresh, LocalAgreement-2 commit | `41e1e87` series |
+| v0.1.3 | 2026-06-09 | UX polish: silence guard, hallucination filter, native PiP look, % size sliders, theme-aware PiP, live-tail preservation | `e2dd088` series |
+| **v0.2.0** | _in progress_ | **Polish release** — model picker, caption customization, transcript download, mic-only mode, FAQ refresh | _see §v0.2.0 below_ |
 
 ---
 
@@ -807,3 +809,195 @@ manual test checklist + the rollback being a one-commit revert.
    N=3 is more conservative (lower hallucination risk, more lag-to-commit).
    My pick: N=2 — first agreement is enough; v0.2 can promote to N=3 if
    users complain about wrong text being committed.
+
+---
+---
+
+# v0.2.0 — Polish release
+
+> **Theme:** "Production-grade, not weekend prototype." Four user-visible
+> upgrades that together transform CaptionPip from a clever demo into a
+> tool people actually choose over Otter / YouTube CC / Chrome Live
+> Caption. No new architecture, no model swaps, no scope creep.
+
+## 2.0.1 Why now
+
+Two months of v0.1.x shipped the core engine. Captions feel real-time,
+the silent / hallucinated outputs are tamed, the PiP looks native, both
+themes pass. What is missing is **the bar of expectations a user brings
+from competing products** — they expect to pick a model, customize
+caption look, save the transcript, and use a microphone instead of a
+tab. v0.2.0 delivers all four.
+
+## 2.0.2 IN SCOPE
+
+### 1. Model picker (whisper-tiny / whisper-base / whisper-small)
+
+| Model | Size | Speed (WebGPU) | Accuracy | Tradeoff |
+|---|---|---|---|---|
+| **whisper-tiny** | 39 MB | ~2x faster | ~5% worse WER | Fastest first-load, OK for clean English |
+| **whisper-base** | 74 MB | baseline (current) | baseline | Default — balanced |
+| **whisper-small** | 244 MB | ~2x slower | ~10% better WER | Best quality, slow first download |
+
+UI:
+- Dropdown in the idle screen prefs panel, BELOW the size sliders
+- Each option shows its size + a cache indicator (checkmark if already in IndexedDB, arrow if download needed)
+- Selection persists in `localStorage` key `captionpip:model-pref`
+- Switching models mid-session is NOT supported in v0.2.0 — applies to next Start. Documented inline.
+- All three are `onnx-community/whisper-{size}` (consistent dtype variants — critical, per existing skill notes)
+
+Implementation:
+- Constant `AVAILABLE_MODELS` in `whisperClient.ts` maps user labels to HF model IDs
+- `init()` already accepts a model param — wire UI selection through
+- IndexedDB cache check via the transformers.js standard cache key pattern
+
+### 2. Caption customization
+
+User controls (in the idle prefs panel, NEW collapsible "Caption style" section):
+
+| Control | Range | Default |
+|---|---|---|
+| **Font size** | 80% to 200% (5% step) | 100% |
+| **Font weight** | Regular / Medium / Bold | Regular |
+| **Caption position** in PiP | Top / Middle / Bottom | Top (default, current) |
+| **Text shadow** | toggle | ON (for over-video legibility) |
+
+Implementation:
+- All controls drive CSS custom properties on `.cp-caption-box`:
+  `--caption-font-scale`, `--caption-font-weight`, `--caption-align`, `--caption-shadow`
+- Existing `.caption-text` rule reads these vars with sensible fallbacks
+- Position uses flex `align-items` on `#cp-caption-stream` (top/center/end)
+- Persisted to `captionpip:caption-style` JSON in localStorage
+- Live-applies when slider changes (works for both inline and PiP via CSS var)
+
+### 3. Transcript download (.txt / .vtt / .srt)
+
+After Stop, the active panel shows a "Download transcript" button group:
+
+- **.txt** — plain text, one paragraph per detected pause / line cap
+- **.vtt** — WebVTT, segment timestamps derived from agreement commits
+- **.srt** — SubRip, same data as VTT in SRT format
+
+Timestamps:
+- We do not have word-level timestamps yet. For v0.2.0 we use **segment-level**
+  timestamps recorded each time `appendCommittedWords()` fires, paired
+  with `performance.now() - sessionStartMs`.
+- VTT/SRT will be slightly imprecise (~600-1200ms granularity matching
+  tick rate). Documented honestly in the UI tooltip.
+
+Implementation:
+- New module `src/lib/transcript.ts` — pure functions
+- New buffer in `CaptionApp.script.ts` recording every commit with its timestamp
+- Uses `URL.createObjectURL(new Blob(...))` + synthetic `<a download>` click
+
+### 4. Microphone-only mode
+
+Idle screen now has a source toggle:
+
+- **"Tab / window"** — current `getDisplayMedia` flow (default)
+- **"Microphone"** — new `getUserMedia({audio: true})` flow
+
+Use cases unlocked:
+- Voice notes / dictation
+- Recording your own speech (interviews, podcast prep)
+- Captioning a meeting where YOU are the speaker
+
+Implementation:
+- `audioCapture.ts` factor out the AudioContext/RollingBuffer wiring
+- New `startMicCapture` uses `getUserMedia({audio: true, video: false})`
+  with `echoCancellation: false` + `autoGainControl: false` so it
+  does not process the speech before Whisper sees it
+- Mic mode skips the tab picker — faster to first word
+
+### 5. FAQ copy refresh
+
+Stale claims to fix:
+- "Why is there a ~3-second delay?" — updated to ~700ms with rolling-window explanation
+- Add new Q: "Can I switch models?"
+- Add new Q: "Can I download the transcript?"
+- Add new Q: "Can I use my microphone?"
+
+## 2.0.3 OUT OF SCOPE (still deferred)
+
+- Language picker (defer to v0.2.1)
+- IndicWhisper / Hindi (defer to v0.2.2)
+- Translation (defer to v0.3)
+- AudioWorklet migration (defer to v0.3)
+- Silero VAD (defer to v0.3 — current silence guard is good enough)
+- Speaker diarization (defer to v0.3)
+- Browser-extension companion (defer to v0.3)
+- Mid-session model switching (defer to v0.3)
+- Demo video on landing page (separate marketing task)
+- Live sample audio for "try without picking" (defer to v0.2.1)
+- Keyboard shortcuts (defer to v0.2.1)
+- "Continue from last session?" replay (defer to v0.2.1)
+- Background-tab throttling fix (defer to v0.2.1 — needs investigation)
+
+## 2.0.4 Architecture impact (minimal)
+
+| Layer | Change |
+|---|---|
+| `whisperClient.ts` | New `AVAILABLE_MODELS` constant + cache-check helper |
+| `audioCapture.ts` | Extract shared pipeline so `startMicCapture` can reuse |
+| `pipClient.ts` | No change — caption customization is CSS-var driven |
+| `agreement.ts` | No change |
+| `CaptionApp.astro` | New prefs sub-panels + source toggle + download buttons |
+| `CaptionApp.script.ts` | Wire new prefs + recording buffer + download/mic handlers |
+| `transcript.ts` (NEW) | Pure formatter functions for .txt / .vtt / .srt |
+| `global.css` | Caption-style CSS custom properties + defaults |
+
+## 2.0.5 Persistence
+
+```
+captionpip:model-pref        — "tiny" | "base" | "small"
+captionpip:caption-style     — { fontScale, fontWeight, position, textShadow }
+captionpip:pip-prefs         — existing { widthPct, heightPct }
+captionpip:inline-pref       — existing "0" | "1"
+captionpip:theme             — existing "light" | "dark"
+```
+
+Forward-compat: each `loadXxx()` helper falls back to defaults on parse
+failure or missing keys.
+
+## 2.0.6 Manual test checklist (run on Windows + Edge)
+
+- [ ] `npm run dev` -> http://localhost:4321
+- [ ] Open Floating window prefs -> see Width / Height % + cap preview (existing)
+- [ ] Open NEW "Model" panel -> see tiny / base / small dropdown, with size + cache indicator
+- [ ] Open NEW "Caption style" panel -> font size slider, weight selector, position, shadow toggle
+- [ ] Open NEW "Source" toggle on Start -> see "Tab" and "Microphone" options
+- [ ] Pick whisper-tiny -> Start (tab) -> verify "TINY" appears in status briefly
+- [ ] Pick whisper-base -> Start (tab) -> verify (default)
+- [ ] Change font size to 150% -> captions visibly larger in real time
+- [ ] Change position to Bottom -> captions bottom-aligned in PiP
+- [ ] Stop captioning -> "Download" buttons appear -> click .txt -> file downloads
+- [ ] Click .vtt -> file downloads with timestamps
+- [ ] Click .srt -> file downloads with SRT format
+- [ ] Reload page -> all prefs persist correctly
+- [ ] Pick "Microphone" source -> permission prompt -> speak -> captions appear in PiP
+- [ ] FAQ section: latency Q says ~700ms, has new model/transcript/mic Qs
+- [ ] All v0.1.x functionality still works
+- [ ] `npm run build && npx astro check` exits 0
+- [ ] `npm test` exits 0
+
+## 2.0.7 Success criteria
+
+v0.2.0 ships when:
+- All 4 features functional + tested
+- All existing prefs (size sliders, theme, inline-pref) still work
+- Transcript downloads produce valid .txt / .vtt / .srt files
+- Both themes still pass for ALL new UI elements
+- Build clean, 14/14 unit tests still green
+- New skill notes added for: cache-check pattern, transcript format conventions
+
+## 2.0.8 Estimated commits
+
+| # | Scope | LOC est |
+|---|---|---|
+| 1 | Model picker | ~200 |
+| 2 | Caption style controls | ~250 |
+| 3 | Transcript download (incl. new `transcript.ts`) | ~300 |
+| 4 | Microphone mode (incl. `startMicCapture` extract) | ~200 |
+| 5 | FAQ copy refresh | ~50 |
+
+Total: ~1000 LOC, 5 commits.
