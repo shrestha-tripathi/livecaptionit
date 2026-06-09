@@ -1,15 +1,24 @@
 /**
  * Audio capture: getDisplayMedia (video required by API, video track dropped
- * immediately) + AudioContext piping into 16kHz mono Float32 buffers,
- * chunked at CHUNK_SECONDS for Whisper.
+ * immediately) + AudioContext piping into a continuous stream of 16kHz mono
+ * Float32 samples.
  *
- * Caller subscribes to `onChunk` and receives one Float32Array per chunk.
+ * v0.1.2 streaming mode: the caller subscribes to `onAudio` and receives
+ * ~80ms frames continuously. The parent buffers them in a RollingBuffer
+ * (also exported from here) and runs its own tick scheduler to call the
+ * Whisper worker. This replaces the v0.1 "chunk every 3 seconds" API.
+ *
  * Stop the capture via the returned `stop()` function — releases mic/tab
  * permission AND closes AudioContext to free resources.
  */
 
 export const TARGET_SAMPLE_RATE = 16_000;
-export const CHUNK_SECONDS = 3;
+
+// Rolling-window streaming constants (v0.1.2). See SPEC.md §1.2.5.
+export const ROLLING_MAX_SECONDS = 15; // hard ceiling — buffer never grows past this
+export const ROLLING_TARGET_SECONDS = 10; // soft target after trim
+export const TICK_INTERVAL_MS = 600; // ~1.67 ticks/sec
+export const MIN_AUDIO_SECONDS = 0.5; // don't transcribe until we have this much
 
 export interface CaptureHandle {
   stop: () => void;
@@ -18,8 +27,9 @@ export interface CaptureHandle {
 }
 
 export interface CaptureOptions {
-  onChunk: (audio: Float32Array) => void;
-  onLevel?: (rms: number) => void; // optional mic-level/audio-level meter
+  /** Called continuously with raw 16kHz mono samples (~80ms per callback). */
+  onAudio: (samples: Float32Array) => void;
+  onLevel?: (rms: number) => void; // optional audio-level meter
   onError: (err: Error) => void;
   onSourceEnded: () => void;
 }
@@ -54,7 +64,6 @@ export async function startCapture(opts: CaptureOptions): Promise<CaptureHandle>
   videoTracks.forEach((t) => t.stop());
 
   if (!hasAudio) {
-    // Stop audio tracks too so we don't leave anything dangling
     audioTracks.forEach((t) => t.stop());
     throw new Error(
       "No audio in the picked source. Make sure you tick 'Share tab audio' in the picker. macOS users: system audio outside the browser isn't capturable.",
@@ -63,7 +72,6 @@ export async function startCapture(opts: CaptureOptions): Promise<CaptureHandle>
 
   // Step 3: pipe into AudioContext at 16kHz mono (Whisper's native rate)
   const ctx = new AudioContext({ sampleRate: TARGET_SAMPLE_RATE });
-  // If browser refuses 16kHz (some do), we'll resample manually. Check:
   const ctxRate = ctx.sampleRate;
   const needManualResample = ctxRate !== TARGET_SAMPLE_RATE;
 
@@ -73,11 +81,6 @@ export async function startCapture(opts: CaptureOptions): Promise<CaptureHandle>
   // Mix to mono
   const merger = ctx.createChannelMerger(1);
   source.connect(merger);
-
-  // Chunker: accumulate samples until CHUNK_SECONDS worth, then dispatch
-  const chunkSamples = CHUNK_SECONDS * TARGET_SAMPLE_RATE;
-  let buffer = new Float32Array(chunkSamples);
-  let bufferPos = 0;
 
   // ScriptProcessor is deprecated but universally supported; AudioWorklet
   // upgrade is a v0.2 refactor.
@@ -89,7 +92,9 @@ export async function startCapture(opts: CaptureOptions): Promise<CaptureHandle>
   processor.onaudioprocess = (e) => {
     const input = e.inputBuffer.getChannelData(0);
 
-    // Optional manual downsample (linear) if ctx.sampleRate didn't match 16kHz
+    // Optional manual downsample (linear) if ctx.sampleRate didn't match 16kHz.
+    // Always allocates a fresh Float32Array we own, so it's safe to pass to
+    // the rolling buffer or postMessage as transferable.
     let processed: Float32Array;
     if (needManualResample) {
       const ratio = ctxRate / TARGET_SAMPLE_RATE;
@@ -99,7 +104,8 @@ export async function startCapture(opts: CaptureOptions): Promise<CaptureHandle>
         processed[i] = input[Math.floor(i * ratio)];
       }
     } else {
-      processed = input;
+      // Copy because the input buffer is reused by Web Audio on the next callback.
+      processed = new Float32Array(input);
     }
 
     // Level meter (RMS) — throttled to ~10 Hz
@@ -113,25 +119,10 @@ export async function startCapture(opts: CaptureOptions): Promise<CaptureHandle>
       }
     }
 
-    // Append to chunk buffer
-    let off = 0;
-    while (off < processed.length) {
-      const space = buffer.length - bufferPos;
-      const take = Math.min(space, processed.length - off);
-      buffer.set(processed.subarray(off, off + take), bufferPos);
-      bufferPos += take;
-      off += take;
-
-      if (bufferPos >= chunkSamples) {
-        const chunk = buffer;
-        buffer = new Float32Array(chunkSamples);
-        bufferPos = 0;
-        try {
-          opts.onChunk(chunk);
-        } catch (err) {
-          opts.onError(err as Error);
-        }
-      }
+    try {
+      opts.onAudio(processed);
+    } catch (err) {
+      opts.onError(err as Error);
     }
   };
 
@@ -154,4 +145,64 @@ export async function startCapture(opts: CaptureOptions): Promise<CaptureHandle>
   };
 
   return { stop, hasAudio: true, sourceLabel };
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// RollingBuffer — 15-second sliding window of recent audio samples
+// ────────────────────────────────────────────────────────────────────────
+
+export interface RollingBuffer {
+  /** Append samples to the buffer. Oldest data is dropped if cap exceeded. */
+  append: (samples: Float32Array) => void;
+  /** Get an owned copy of current buffer contents (caller may transfer). */
+  snapshot: () => Float32Array;
+  /** Drop the first N samples from the front (after agreement commits). */
+  trimFront: (samples: number) => void;
+  /** Current buffer length in samples. */
+  length: () => number;
+  /** Convenience: current buffer length in seconds at TARGET_SAMPLE_RATE. */
+  durationSeconds: () => number;
+  /** Empty the buffer (e.g. on stop or force-commit recovery). */
+  reset: () => void;
+}
+
+export function createRollingBuffer(
+  maxSamples = ROLLING_MAX_SECONDS * TARGET_SAMPLE_RATE,
+): RollingBuffer {
+  let buf: Float32Array = new Float32Array(0);
+
+  return {
+    append(samples) {
+      if (samples.length === 0) return;
+      const merged = new Float32Array(buf.length + samples.length);
+      merged.set(buf, 0);
+      merged.set(samples, buf.length);
+      buf =
+        merged.length > maxSamples
+          ? new Float32Array(merged.subarray(merged.length - maxSamples))
+          : merged;
+    },
+    snapshot() {
+      return new Float32Array(buf);
+    },
+    trimFront(samples) {
+      if (samples <= 0) return;
+      if (samples >= buf.length) {
+        buf = new Float32Array(0);
+        return;
+      }
+      // Force a fresh allocation (no shared underlying ArrayBuffer) so the
+      // worker's transferable from a prior snapshot doesn't haunt us.
+      buf = new Float32Array(buf.subarray(samples));
+    },
+    length() {
+      return buf.length;
+    },
+    durationSeconds() {
+      return buf.length / TARGET_SAMPLE_RATE;
+    },
+    reset() {
+      buf = new Float32Array(0);
+    },
+  };
 }
