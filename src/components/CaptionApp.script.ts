@@ -29,6 +29,7 @@
 import {
   startCapture,
   createRollingBuffer,
+  TARGET_SAMPLE_RATE,
   TICK_INTERVAL_MS,
   MIN_AUDIO_SECONDS,
   type CaptureHandle,
@@ -40,9 +41,10 @@ import { Agreement } from "../lib/agreement";
 
 type AppState = "idle" | "loading" | "active" | "error";
 
-const MAX_CAPTION_LINES = 25;
-const MAX_LINE_WORDS = 14; // committed words per paragraph before starting a new one
+const MAX_CAPTION_LINES = 4; // visible committed paragraphs in the history (older drops off)
+const MAX_LINE_WORDS = 12; // committed words per paragraph before starting a new one
 const MAX_TICK_MS = 2000; // hard cap on adaptive tick interval
+const FORCE_COMMIT_KEEP_SECONDS = 2; // keep this much trailing audio after force-commit
 const INLINE_PREF_KEY = "captionpip:inline-pref";
 
 (function init() {
@@ -205,12 +207,14 @@ const INLINE_PREF_KEY = "captionpip:inline-pref";
       lastP.textContent = (lastP.textContent ? lastP.textContent + " " : "") + word;
       captionCount++;
     }
-    // Cap paragraph history
+    // Cap paragraph history — only show last N committed lines
     while (captionStream.childElementCount > MAX_CAPTION_LINES) {
       captionStream.firstElementChild?.remove();
     }
-    // Auto-scroll to latest
-    captionBox.scrollTop = captionBox.scrollHeight;
+    // Auto-scroll to latest. captionStream owns the overflow (not captionBox),
+    // and inside PiP that's still a real overflow:auto container, so
+    // scrollTop = scrollHeight works in both contexts.
+    captionStream.scrollTop = captionStream.scrollHeight;
   }
 
   /** Refresh the in-place "live" (uncommitted) line. Hidden when empty. */
@@ -222,8 +226,11 @@ const INLINE_PREF_KEY = "captionpip:inline-pref";
     }
     captionLive.textContent = text;
     captionLive.classList.remove("hidden");
-    // Keep view glued to the live tail
-    captionBox.scrollTop = captionBox.scrollHeight;
+    // Live line sits OUTSIDE the scrollable stream now (pinned at the
+    // bottom of the caption box), so we keep the stream scrolled to
+    // its own bottom so the most-recent committed line is visible
+    // right above the live line.
+    captionStream.scrollTop = captionStream.scrollHeight;
   }
 
   // ── Tick scheduler ──
@@ -272,15 +279,18 @@ const INLINE_PREF_KEY = "captionpip:inline-pref";
 
       // Force-commit guard: if buffer has grown past the soft cap and we
       // STILL haven't committed enough words to drain it via agreement,
-      // promote the entire live hypothesis to committed and reset the
-      // buffer. Better to risk one slightly-wrong line than let the
-      // window grow forever (which would make every transcribe call
-      // re-process the same 20+ seconds of audio and feel hung).
+      // promote the entire live hypothesis to committed and trim the
+      // buffer (keeping the last ~2s so the next tick has audio context
+      // and we don't get a perceptible gap before captions resume).
       if (audioWasOverCap) {
         const liveTokens = agreement.liveLine.trim().split(/\s+/).filter(Boolean);
         if (liveTokens.length > 0) appendCommittedWords(liveTokens);
         agreement.reset();
-        rolling.reset();
+        // Trim everything EXCEPT the trailing FORCE_COMMIT_KEEP_SECONDS so
+        // the next tick has context to transcribe instead of silence-starting.
+        const keepSamples = FORCE_COMMIT_KEEP_SECONDS * TARGET_SAMPLE_RATE;
+        const trimAmount = Math.max(0, rolling.length() - keepSamples);
+        if (trimAmount > 0) rolling.trimFront(trimAmount);
         renderLiveLine("");
       }
     } catch (e) {

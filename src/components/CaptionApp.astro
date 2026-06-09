@@ -56,14 +56,15 @@
   <div data-panel="active" class="hidden">
     {/* Mount point — caption box can be moved INTO PiP and back to here */}
     <div id="cp-caption-mount">
-      <div id="cp-caption-box" class="cp-caption-box bg-[var(--color-surface)] rounded-xl px-5 py-4 shadow-line min-h-[180px] max-h-[300px] overflow-y-auto">
-        <header class="flex items-center justify-between gap-3 pb-3">
+      <div id="cp-caption-box" class="cp-caption-box bg-[var(--color-surface)] rounded-xl shadow-line flex flex-col h-[260px]">
+        {/* Sticky header — controls stay visible no matter how many caption lines accrue */}
+        <header class="shrink-0 flex items-center justify-between gap-3 px-5 pt-4 pb-3 border-b border-[var(--color-surface-strong)]">
           <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider">
             <span class="size-2 rounded-full bg-[var(--color-rec)] rec-dot"></span>
             <span style="color: var(--color-rec)">LIVE</span>
-            <span class="text-[var(--color-fg-subtle)] font-normal normal-case tracking-normal" id="cp-source-label"></span>
+            <span class="text-[var(--color-fg-subtle)] font-normal normal-case tracking-normal truncate max-w-[180px]" id="cp-source-label"></span>
           </div>
-          <div class="flex items-center gap-1.5">
+          <div class="flex items-center gap-1.5 shrink-0">
             <button
               id="cp-pip-btn"
               type="button"
@@ -82,7 +83,7 @@
         {/* Status banner — visible inside both main mount AND PiP window
             (same DOM node, moves with the caption box). Hidden once
             the first real caption arrives. */}
-        <div id="cp-caption-status" class="hidden mb-3 px-3 py-2 rounded-md bg-[var(--color-surface-strong)]">
+        <div id="cp-caption-status" class="hidden shrink-0 mx-5 mt-3 px-3 py-2 rounded-md bg-[var(--color-surface-strong)]">
           <div class="flex items-center gap-2 text-xs text-[var(--color-fg-muted)]">
             <span class="size-1.5 rounded-full bg-[var(--color-brand)] rec-dot"></span>
             <span id="cp-caption-status-msg">Loading…</span>
@@ -92,16 +93,18 @@
           </div>
         </div>
 
-        <div id="cp-caption-stream" class="caption-text text-[var(--color-fg)]">
+        {/* Scrollable caption history — only this area grows/scrolls,
+            controls + live line stay pinned. */}
+        <div id="cp-caption-stream" class="caption-text text-[var(--color-fg)] flex-1 min-h-0 overflow-y-auto px-5 py-3">
           <p class="text-[var(--color-fg-subtle)] text-sm italic">Listening… first word usually appears within ~1 second.</p>
         </div>
 
-        {/* Live (uncommitted) line — refreshes in-place every tick.
+        {/* Live (uncommitted) line — pinned bottom, refreshes in-place every tick.
             Muted color + italic signals "draft / still refining".
             aria-live='polite' lets screen-reader users get the real-time-feel. */}
         <p
           id="cp-caption-live"
-          class="caption-text text-[var(--color-fg-muted)] italic mt-2 hidden"
+          class="caption-text text-[var(--color-fg-muted)] italic shrink-0 hidden px-5 pb-4 pt-2 border-t border-[var(--color-surface-strong)]"
           aria-live="polite"
           aria-atomic="true"
         ></p>
