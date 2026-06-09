@@ -81,8 +81,24 @@ export async function openPip(options: PipOpenOptions): Promise<PipHandle> {
   pipWindow.document.body.style.color = "var(--color-fg)";
   pipWindow.document.body.style.fontFamily = "var(--font-sans)";
 
+  // Belt-and-suspenders transparency: set inline styles on BOTH html and
+  // body directly, AND inject a stylesheet. Chrome's PiP window has UA
+  // styles that sometimes win against pure CSS, and the document root
+  // background is the load-bearing surface that decides whether the
+  // window looks "translucent" at all.
+  pipWindow.document.documentElement.style.background = "transparent";
+  pipWindow.document.documentElement.style.backgroundColor = "transparent";
+  pipWindow.document.body.style.background = "transparent";
+  pipWindow.document.body.style.backgroundColor = "transparent";
+  // Tell the browser this surface supports both schemes so it doesn't
+  // paint a default white background based on prefers-color-scheme.
+  const colorSchemeMeta = pipWindow.document.createElement("meta");
+  colorSchemeMeta.name = "color-scheme";
+  colorSchemeMeta.content = "dark light";
+  pipWindow.document.head.appendChild(colorSchemeMeta);
+
   // ── Opacity (user-configurable, native-caption style) ──
-  // The opacity slider now controls the caption BOX's background alpha
+  // The opacity slider controls the caption BOX's background alpha
   // — NOT the content opacity. Text stays full white so it stays
   // readable; the dark panel fades to let the video underneath show
   // through. Mirrors how YouTube / Live Caption / VLC subtitles work.
@@ -95,12 +111,14 @@ export async function openPip(options: PipOpenOptions): Promise<PipHandle> {
   // controls, text-shadow for over-video legibility.
   const pipStyle = pipWindow.document.createElement("style");
   pipStyle.textContent = `
-    html, body.pip-window {
+    :root, html, body.pip-window {
       background: transparent !important;
-      overflow: hidden;
+      background-color: transparent !important;
     }
+    html, body.pip-window { overflow: hidden; }
     body.pip-window .cp-caption-box {
       background: rgba(20, 20, 20, var(--pip-opacity, 1)) !important;
+      background-color: rgba(20, 20, 20, var(--pip-opacity, 1)) !important;
       color: #ffffff !important;
       box-shadow: none !important;
       border-radius: 0 !important;
@@ -111,8 +129,9 @@ export async function openPip(options: PipOpenOptions): Promise<PipHandle> {
     body.pip-window #cp-caption-stream {
       color: #ffffff !important;
       text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85), 0 0 8px rgba(0, 0, 0, 0.55);
+      background: transparent !important;
     }
-    body.pip-window #cp-caption-stream p { color: #ffffff !important; }
+    body.pip-window #cp-caption-stream p { color: #ffffff !important; background: transparent !important; }
     body.pip-window #cp-caption-stream strong { color: #ffffff !important; font-weight: 700; }
     body.pip-window #cp-caption-stream span.live-tail { color: rgba(255, 255, 255, 0.55) !important; }
     /* Header (LIVE + Stop) hidden by default in PiP, fades in on hover.
@@ -121,6 +140,7 @@ export async function openPip(options: PipOpenOptions): Promise<PipHandle> {
       opacity: 0;
       transition: opacity 220ms ease-out 1s;
       border-bottom-color: rgba(255, 255, 255, 0.15) !important;
+      background: transparent !important;
     }
     body.pip-window:hover .cp-caption-box > header,
     body.pip-window:focus-within .cp-caption-box > header {
