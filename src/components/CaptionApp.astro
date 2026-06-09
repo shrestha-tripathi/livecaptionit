@@ -282,8 +282,21 @@
         {/* Sticky header — controls stay visible no matter how many caption lines accrue */}
         <header class="shrink-0 flex items-center justify-between gap-3 px-5 pt-4 pb-3 border-b border-[var(--color-surface-strong)]">
           <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider">
-            <span class="size-2 rounded-full bg-[var(--color-rec)] rec-dot"></span>
-            <span style="color: var(--color-rec)">LIVE</span>
+            {/* Live indicator — visible only in live substate.
+                Note: we DON'T set `inline-flex` here because Tailwind's
+                `.hidden` (display:none) only wins over baseline `display`
+                when no other display utility competes. Style with
+                arbitrary `[display:inline-flex]` so the substate toggle
+                via `.hidden` works correctly. */}
+            <span data-when="live" class="items-center gap-2 [display:inline-flex]">
+              <span class="size-2 rounded-full bg-[var(--color-rec)] rec-dot"></span>
+              <span style="color: var(--color-rec)">LIVE</span>
+            </span>
+            {/* Stopped indicator — visible only in stopped substate (after Stop while transcript has content) */}
+            <span data-when="stopped" class="hidden items-center gap-2 [display:inline-flex]">
+              <span class="size-2 rounded-full bg-[var(--color-fg-subtle)]"></span>
+              <span style="color: var(--color-fg-muted)">STOPPED</span>
+            </span>
             <span
               id="cp-task-badge"
               class="hidden text-[10px] font-semibold normal-case tracking-normal px-1.5 py-0.5 rounded-md bg-[var(--color-brand)]/15 text-[var(--color-brand)]"
@@ -294,16 +307,27 @@
           <div class="flex items-center gap-1.5 shrink-0">
             <button
               id="cp-pip-btn"
+              data-when="live"
               type="button"
               class="text-[10px] uppercase tracking-wider font-semibold px-2.5 py-1 rounded-md bg-[var(--color-surface-strong)] hover:bg-[var(--color-brand)] hover:text-white transition-colors shadow-line"
               title="Toggle floating window"
             >Pop out</button>
+            {/* "Start new" appears only after Stop so users have an obvious next action */}
+            <button
+              id="cp-restart-btn"
+              data-when="stopped"
+              type="button"
+              class="hidden text-[10px] uppercase tracking-wider font-semibold px-2.5 py-1 rounded-md bg-[var(--color-brand)] text-white hover:bg-[var(--color-brand-strong)] transition-colors shadow-line"
+              title="Start a new session"
+            >Start new</button>
+            {/* Stop button: in live substate says "Stop" + stops capture.
+                In stopped substate becomes "Done" + clears + returns to idle. */}
             <button
               id="cp-stop-btn"
               type="button"
               class="text-[10px] uppercase tracking-wider font-semibold px-2.5 py-1 rounded-md bg-[var(--color-surface-strong)] hover:bg-[var(--color-rec)] hover:text-white transition-colors shadow-line"
               title="Stop captioning"
-            >Stop</button>
+            ><span data-when="live">Stop</span><span data-when="stopped" class="hidden">Done</span></button>
           </div>
         </header>
 

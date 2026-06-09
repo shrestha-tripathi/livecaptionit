@@ -216,6 +216,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
   };
   const startBtn = rootEl.querySelector<HTMLButtonElement>("#cp-start-btn")!;
   const stopBtn = rootEl.querySelector<HTMLButtonElement>("#cp-stop-btn")!;
+  const restartBtn = rootEl.querySelector<HTMLButtonElement>("#cp-restart-btn")!;
   const pipBtn = rootEl.querySelector<HTMLButtonElement>("#cp-pip-btn")!;
   const resetBtn = rootEl.querySelector<HTMLButtonElement>("#cp-reset-btn")!;
   const inlineToggle = rootEl.querySelector<HTMLInputElement>("#cp-inline-toggle")!;
@@ -568,6 +569,22 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     panels.loading.classList.toggle("hidden", state !== "loading");
     panels.active.classList.toggle("hidden", state !== "active");
     panels.error.classList.toggle("hidden", state !== "error");
+  }
+
+  /** Active-panel substate: "live" while captioning, "stopped" after Stop
+   *  when transcript has content (so user can still see history + download).
+   *  Elements with `data-when="live"` / `data-when="stopped"` toggle visibility
+   *  via the `.hidden` class — covers the LIVE/STOPPED indicators, the Stop
+   *  button label swap (Stop → Done), Pop Out (hidden when stopped), and
+   *  the "Start new" button (only visible when stopped). */
+  type Substate = "live" | "stopped";
+  let currentSubstate: Substate = "live";
+  function setSubstate(s: Substate) {
+    currentSubstate = s;
+    rootEl.dataset.substate = s;
+    rootEl.querySelectorAll<HTMLElement>("[data-when]").forEach((el) => {
+      el.classList.toggle("hidden", el.dataset.when !== s);
+    });
   }
 
   function showLoading(msg: string, progress?: number) {
@@ -949,6 +966,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     }
     sourceLabel.textContent = `· ${captureHandle.sourceLabel}`;
     setState("active");
+    setSubstate("live");
 
     scheduleNextTick();
 
@@ -991,7 +1009,10 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     if (transcriptSegments.length > 0) {
       downloadBar.classList.remove("hidden");
       sourceLabel.textContent = "";
-      // Stay on "active" panel so caption history is still visible
+      // Stay on "active" panel so caption history is still visible,
+      // but flip substate so the header (LIVE → STOPPED, Stop → Done,
+      // Pop Out hidden, Start new shown) reflects that capture ended.
+      setSubstate("stopped");
     } else {
       // Nothing captured (e.g. they cancelled the picker) — back to idle
       setState("idle");
@@ -1034,7 +1055,22 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
 
   // ── Event wiring ──
   startBtn.addEventListener("click", () => void startPipeline());
-  stopBtn.addEventListener("click", () => stopPipeline("User stop"));
+  stopBtn.addEventListener("click", () => {
+    if (currentSubstate === "stopped") {
+      // "Done" — user has reviewed/downloaded transcript, ready to go home.
+      // Don't auto-clear the transcript — they may not have downloaded yet
+      // and we don't want to surprise-wipe data. The "Clear" button in the
+      // download bar exists for that.
+      setState("idle");
+      return;
+    }
+    stopPipeline("User stop");
+  });
+  restartBtn.addEventListener("click", () => {
+    // Return to idle so user can pick fresh source + start over.
+    // Same caveat — don't auto-clear transcript; that's Clear's job.
+    setState("idle");
+  });
   pipBtn.addEventListener("click", () => void togglePip());
   resetBtn.addEventListener("click", () => setState("idle"));
 
