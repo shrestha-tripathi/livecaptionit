@@ -94,18 +94,41 @@ export async function openPip(options: PipOpenOptions): Promise<PipHandle> {
       background: var(--color-bg);
       color: var(--color-fg);
       overflow: hidden;
+      margin: 0;
+      padding: 0;
+      width: 100vw;
+      height: 100vh;
     }
     body.pip-window .cp-caption-box {
       background: var(--color-surface) !important;
       color: var(--color-fg) !important;
       box-shadow: none !important;
       border-radius: 0 !important;
+      /* PiP-fill: lock the box to the window dimensions so it reflows
+         as the user resizes the PiP. width: 100vw + box-sizing border-box
+         lets the inner padding stay inside the viewport (no horizontal
+         scrollbar at any width). */
+      width: 100vw !important;
+      max-width: none !important;
       height: 100vh !important;
+      box-sizing: border-box !important;
     }
     /* Captions + live tail follow the theme — bold confirmed in fg,
-       muted live tail in fg-subtle. Light + dark both pass. */
-    body.pip-window #cp-caption-stream { color: var(--color-fg) !important; }
-    body.pip-window #cp-caption-stream p { color: var(--color-fg) !important; }
+       muted live tail in fg-subtle. Light + dark both pass.
+       min-width: 0 + overflow-wrap: anywhere together force flex children
+       to wrap at the current width (otherwise a long unbreakable token
+       can lock the layout to a stale width). */
+    body.pip-window #cp-caption-stream {
+      color: var(--color-fg) !important;
+      min-width: 0 !important;
+      width: 100% !important;
+      overflow-wrap: anywhere !important;
+      word-break: break-word !important;
+    }
+    body.pip-window #cp-caption-stream p {
+      color: var(--color-fg) !important;
+      max-width: 100% !important;
+    }
     body.pip-window #cp-caption-stream strong {
       color: var(--color-fg) !important;
       font-weight: 700;
@@ -114,12 +137,16 @@ export async function openPip(options: PipOpenOptions): Promise<PipHandle> {
       color: var(--color-fg-subtle) !important;
     }
     /* Header (LIVE + Stop) hidden by default, fades in on hover.
-       Long leave-delay so glancing away doesn't kill controls instantly. */
+       Long leave-delay so glancing away doesn't kill controls instantly.
+       min-width: 0 + flex-wrap keep the row from forcing horizontal scroll
+       when the user resizes the PiP narrow. */
     body.pip-window .cp-caption-box > header {
       opacity: 0;
       transition: opacity 220ms ease-out 1s;
       background: var(--color-surface) !important;
       border-bottom-color: var(--color-line) !important;
+      min-width: 0 !important;
+      flex-wrap: wrap !important;
     }
     body.pip-window:hover .cp-caption-box > header,
     body.pip-window:focus-within .cp-caption-box > header {
