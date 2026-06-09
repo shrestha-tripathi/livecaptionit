@@ -9,9 +9,18 @@ export type WhisperStatus =
   | { type: "ready"; model: string; device: "webgpu" | "wasm" }
   | { type: "error"; message: string };
 
+export interface WindowResult {
+  text: string;
+  /** Wall-clock inference time in ms — used by the parent to adapt tick rate. */
+  durationMs: number;
+}
+
 export interface WhisperClient {
   init: (model?: string) => Promise<{ model: string; device: "webgpu" | "wasm" }>;
+  /** Single-shot transcription. Returns text only (legacy v0.1 API). */
   transcribe: (audio: Float32Array) => Promise<string>;
+  /** Streaming transcription. Returns text + wall-clock inference duration. */
+  transcribeWindow: (audio: Float32Array) => Promise<WindowResult>;
   dispose: () => void;
   onStatus: (cb: (s: WhisperStatus) => void) => void;
 }
@@ -24,7 +33,10 @@ export function createWhisperClient(workerUrl = "/whisper-worker.js"): WhisperCl
   let statusCb: ((s: WhisperStatus) => void) | null = null;
   let initResolve: ((r: { model: string; device: "webgpu" | "wasm" }) => void) | null = null;
   let initReject: ((e: Error) => void) | null = null;
-  const pending = new Map<number, { resolve: (s: string) => void; reject: (e: Error) => void }>();
+  const pending = new Map<
+    number,
+    { resolve: (r: WindowResult) => void; reject: (e: Error) => void }
+  >();
 
   worker.onerror = (e) => {
     statusCb?.({ type: "error", message: `Worker error: ${e.message}` });
@@ -45,7 +57,10 @@ export function createWhisperClient(workerUrl = "/whisper-worker.js"): WhisperCl
       case "result": {
         const id = data.id as number | undefined;
         if (id !== undefined && pending.has(id)) {
-          pending.get(id)!.resolve(data.text ?? "");
+          pending.get(id)!.resolve({
+            text: data.text ?? "",
+            durationMs: typeof data.durationMs === "number" ? data.durationMs : 0,
+          });
           pending.delete(id);
         }
         break;
@@ -66,8 +81,8 @@ export function createWhisperClient(workerUrl = "/whisper-worker.js"): WhisperCl
     }
   };
 
-  return {
-    init(model = "Xenova/whisper-base") {
+  const client: WhisperClient = {
+    init(model = "onnx-community/whisper-base") {
       return new Promise((resolve, reject) => {
         initResolve = resolve;
         initReject = reject;
@@ -75,7 +90,10 @@ export function createWhisperClient(workerUrl = "/whisper-worker.js"): WhisperCl
       });
     },
     transcribe(audio: Float32Array) {
-      return new Promise<string>((resolve, reject) => {
+      return client.transcribeWindow(audio).then((r) => r.text);
+    },
+    transcribeWindow(audio: Float32Array) {
+      return new Promise<WindowResult>((resolve, reject) => {
         const id = _nextId++;
         pending.set(id, { resolve, reject });
         // Transferable: surrender ownership of buffer to worker for zero-copy
@@ -91,4 +109,6 @@ export function createWhisperClient(workerUrl = "/whisper-worker.js"): WhisperCl
       statusCb = cb;
     },
   };
+
+  return client;
 }
