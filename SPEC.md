@@ -1,10 +1,10 @@
 # LiveCaptionIt — Spec
 
-**Status:** v0.1 → v0.3.1 shipped · **v0.3.2 IN PROGRESS** (translate-mode removal + PiP substate bug fix)
-**Date:** 2026-06-08 (v0.1) · 2026-06-09 (v0.1.1 → v0.3.0)
-**Working domain:** `livecaptionit.com` (RDAP-verified available — buy before commit if you keep the name)
+**Status:** v0.1 → v0.3.2 SHIPPED + rebrand SHIPPED · **v0.4.0 IN PROGRESS** (sample demo + keyboard shortcuts + session replay)
+**Date:** 2026-06-08 (v0.1) · 2026-06-09 (v0.1.1 → v0.3.2) · 2026-06-10 (rebrand CaptionPip → LiveCaptionIt, v0.4.0)
+**Domain:** `livecaptionit.com` (purchased 2026-06-10, DNS wire-up pending)
 **Repo:** `github.com/shrestha-tripathi/livecaptionit` (private until shipped)
-**Ship target:** v0.3.0 this week
+**Ship target:** v0.4.0 today
 
 ## Changelog
 
@@ -1116,3 +1116,355 @@ Default `"transcribe"`. Load helper falls back to default on parse failure / unk
 | 4 | docs(landing): FAQ + hero + use-cases for translation | ~60 |
 
 Total: ~340 LOC, 4 commits.
+
+---
+
+# v0.4.0 — Sample Demo + Keyboard Shortcuts + Session Replay (planned)
+
+**Date:** 2026-06-10
+**Status:** IN PROGRESS
+
+## 4.0.0 Goal
+
+Three polish features that together transform the landing-page first-impression
+and the returning-user experience. Shipped together because each is small
+(~50-150 LOC) and they share zero conflicting code paths.
+
+The umbrella theme is **friction removal**:
+
+1. **Sample demo** removes onboarding friction. A new visitor currently needs to
+   (a) pick a tab, (b) tick "Share tab audio" in the picker, (c) wait ~5-10s
+   for the Whisper model to download — all before seeing any captions. Most
+   bounce before that. A "Try with sample audio" button plays a bundled short
+   English clip through the same pipeline so the captions visibly stream in
+   without the user permitting anything. **Onboarding magic in one click.**
+
+2. **Keyboard shortcuts** remove power-user friction. Space=pause/resume
+   capture, Escape=stop, P=popout. Tiny ship, professional feel.
+
+3. **Session replay via IndexedDB** removes returning-user friction. Today every
+   reload loses everything. After v0.4, the last 20 sessions are persisted
+   locally (audio NOT stored — only the committed transcript text + metadata)
+   and listed under a new "History" pane on idle screen with one-click reload
+   of the full transcript view. Storage stays 100% on-device — no privacy
+   regression.
+
+## 4.0.1 Scope — Sample Demo
+
+### What ships
+
+A new button below the segmented source toggle on the idle screen:
+
+```
+[ 🎬 Try with sample audio ]
+```
+
+Clicking it:
+1. Resets agreement / rolling buffer / live tail (same as normal start)
+2. Switches state machine to `loading` then `active` (same as normal flow)
+3. Sets `data-substate="live"` and a NEW attribute `data-source="sample"`
+4. Fetches `/sample.mp3` (~15s pre-recorded clear English narration about what
+   LiveCaptionIt does — "Welcome to LiveCaptionIt. This sample plays through
+   the same Whisper pipeline that captions your real audio. Notice how words
+   appear in muted italic as Whisper is still considering them, then solidify
+   into bold as the rolling-window agreement algorithm confirms them...")
+5. Feeds the decoded audio into the same `RollingBuffer` + tick scheduler as
+   live capture (no separate code path — proves the real pipeline works)
+6. Plays the audio through a hidden `<audio>` element so the user HEARS what's
+   being captioned in sync
+7. Auto-stops when the audio ends (`onended` listener) → transitions to
+   `stopped` substate with the full transcript visible + download buttons
+8. Optional: small toast "That's it! Click Start to caption a real video."
+
+### Why a fake-feed approach instead of a real demo video?
+
+A bundled WAV/MP3 gives us:
+- Zero browser permission prompts (no `getDisplayMedia` or `getUserMedia`)
+- Predictable, demo-able output — Whisper transcription of the same audio is
+  ~95% identical run-to-run
+- Same code path as production — proves the architecture works
+- Bandwidth: ~150-300KB MP3 (15s at 96kbps), one-time CDN-cached load
+- Works on ALL browsers regardless of Document PiP / screen-capture support
+
+### Asset
+
+`public/sample.mp3` — created via macOS `say` command or a free TTS service,
+~15s clear narration. Mono 16kHz to match Whisper's expected input.
+
+### Architecture
+
+Reuses 100% of the existing pipeline:
+
+```
+[Try sample] click
+    ↓
+startSampleSession()
+    ↓
+fetch("/sample.mp3") → ArrayBuffer
+    ↓
+AudioContext.decodeAudioData → AudioBuffer (decoded Float32 samples)
+    ↓
+resample to 16kHz if needed (we already have helper in audioCapture.ts)
+    ↓
+new RollingBuffer + agreement.reset()
+    ↓
+playAudio() → <audio> element starts playing for user
+    ↓
+feedSamplesInChunks() → push ~80ms chunks into rolling buffer at real-time pace
+    ↓
+existing tick scheduler picks up + transcribes via worker
+    ↓
+existing UI receives committed/liveLine words via existing handlers
+    ↓
+on audio.onended → stopPipeline() (existing function works as-is)
+```
+
+### Architecture impact
+
+| Layer | Change |
+|---|---|
+| `public/sample.mp3` | New asset (~250KB, gitignored from git LFS unless tiny) |
+| `src/lib/sampleFeed.ts` | NEW module — pure function `playSampleThroughPipeline(audioContext, onChunk, onLevel, onEnded)` |
+| `src/components/CaptionApp.astro` | NEW button below source toggle, hidden `<audio>` element |
+| `src/components/CaptionApp.script.ts` | NEW `startSampleSession()` calling sampleFeed; reuses existing tick/agreement/UI |
+| `src/lib/audioCapture.ts` | Export `resampleTo16k()` helper as a pure function (currently inline) for sampleFeed reuse |
+| `src/pages/index.astro` | Hero update mentioning "Try with sample audio" no-permission CTA |
+| `tests/sampleFeed.test.ts` | NEW (3-4 cases) — verify chunking math, real-time pacing, onEnded callback |
+
+### Success criteria
+
+- Sample button visible on idle screen for all users (no support gating)
+- Click → captions visibly appear within ~2s of audio start
+- Audio plays through speakers in sync with captions
+- Auto-stops cleanly on `ended` → stopped substate with download buttons usable
+- Existing `startPipeline()` (real capture) unaffected — full regression pass
+
+## 4.0.2 Scope — Keyboard Shortcuts
+
+### What ships
+
+Active-session keyboard shortcuts. On idle screen, just one shortcut.
+
+| Context | Key | Action |
+|---|---|---|
+| Idle | `Enter` | Click Start (matches "primary action on enter" convention) |
+| Active (live) | `Space` | Pause/resume capture (mutes the worker tick — but keeps audio capture buffer accumulating; new shortcut, see implementation) |
+| Active (live) | `Escape` | Stop captures (same as Stop button) |
+| Active (live) | `P` | Pop out to PiP (no-op if already in PiP) |
+| Active (live, in PiP) | `P` | Close PiP, return to inline |
+| Stopped | `R` | Start new (same as "Start new" button) |
+| Stopped | `D` | Download last transcript (.txt) |
+| Anywhere | `?` | Toggle keyboard shortcuts help overlay |
+
+### UI
+
+Subtle help text bottom-right of the caption box when in active state:
+"Space pause · Esc stop · P popout · ? for help"
+
+Help overlay (triggered by `?`): centered modal listing all shortcuts grouped
+by context. Esc to dismiss. Same style as existing `<dialog>` pattern (we
+already have one for the prefs panel).
+
+### Implementation gotchas
+
+1. **Don't capture keystrokes when user is typing in an input/textarea/select**
+   — early-out in the global listener via
+   `if (target.matches("input,textarea,select,[contenteditable]")) return;`
+2. **Don't capture keystrokes when the PiP window has focus** — Document PiP
+   shares the parent realm BUT keydown events fire on the active document.
+   We need to install the listener on BOTH `window.document` and
+   `pipWindow.document`. Add/remove on PiP open/close.
+3. **Space pause is tricky** — pausing the tick scheduler is straightforward,
+   but the rolling buffer would keep growing and eventually OOM. Solution:
+   stop the audioCapture, keep `audioContext` warm. On resume: restart
+   capture from the same source (`getDisplayMedia` returns same stream if
+   stream is still alive; else re-prompt user).
+4. **Help overlay is a `<dialog>` element** — Astro pages can render
+   `<dialog>` natively. Open via `.showModal()`, close via `<form
+   method="dialog">`. Works in all evergreen browsers.
+
+### Architecture impact
+
+| Layer | Change |
+|---|---|
+| `src/lib/shortcuts.ts` | NEW — pure-function shortcut registry, returns add/removeListener pair |
+| `src/components/CaptionApp.astro` | Add `<dialog id="cp-shortcuts-help">`, footer help text |
+| `src/components/CaptionApp.script.ts` | Wire shortcut handlers per state (idle/loading/active+live/active+stopped). Register on mount, on PiP open also register on pipWindow.document |
+| `tests/shortcuts.test.ts` | NEW (5-6 cases) — verify dispatch logic, input-element exclusion, state gating |
+
+### Success criteria
+
+- All shortcuts work in inline mode
+- Space/Esc/P work inside PiP (PiP window focus → caption updates in PiP)
+- Typing in any input doesn't trigger shortcuts
+- Help overlay opens/closes via `?` / Esc
+- No regression on click-based controls
+
+## 4.0.3 Scope — Session Replay (IndexedDB)
+
+### What ships
+
+Past sessions persisted locally. New "Recent sessions" pane below the source
+toggle on idle screen, shows last 5 sessions with timestamp + preview. One-click
+to view the full transcript in a read-only mode (no replay of audio — audio
+is NEVER stored). User can re-download or copy. "Clear history" button at
+the bottom.
+
+### What's stored
+
+```ts
+type StoredSession = {
+  id: string;           // UUIDv4
+  startedAt: number;    // epoch ms
+  endedAt: number;      // epoch ms
+  source: "tab" | "mic" | "sample";
+  transcript: TranscriptSegment[];  // full committed words + timestamps
+  preview: string;      // first ~100 chars of transcript text for the list view
+  modelId: string;      // "tiny" / "base" / "small"
+};
+```
+
+**NOT stored:** raw audio, level data, decoder state, agreement internal state.
+
+### IndexedDB schema
+
+Database: `livecaptionit-history`
+Version: 1
+Object store: `sessions`
+Key path: `id`
+Indexes:
+- `startedAt` (for sort-by-recency)
+- `source` (for future filtering)
+
+Cap at 20 most-recent sessions; on insert when at cap, delete oldest (by
+`startedAt` index).
+
+### UI
+
+Idle screen layout (additive to existing):
+
+```
+[ existing prefs collapsible <details> ]
+[ existing source toggle ]
+[ NEW: 🎬 Try with sample audio button ]
+[ Start captions ▶ ]
+
+[ NEW: Recent sessions ]
+  - 2 min ago · Tab · "Welcome everyone to today's meeting we'll be..." [view]
+  - 1 hour ago · Mic · "Testing testing one two three this is a..." [view]
+  - 3 hours ago · Sample · "Welcome to LiveCaptionIt. This sample plays..." [view]
+  ...
+  [Clear all history]
+```
+
+When user clicks `[view]`: open a `<dialog>` showing the full transcript in
+read-only mode + download buttons (same .txt/.vtt/.srt formats we already
+support) + close button. NO audio replay (we never stored it).
+
+### Privacy copy update
+
+Add to FAQ:
+
+> **Does LiveCaptionIt store anything?**
+> Only your last 20 caption transcripts (the text only — never audio) are
+> saved locally in your browser via IndexedDB so you can revisit them. Click
+> "Clear all history" anytime. Nothing ever leaves your device.
+
+Privacy page: add a sentence about transcript storage.
+
+### Architecture impact
+
+| Layer | Change |
+|---|---|
+| `src/lib/sessionStore.ts` | NEW — IndexedDB wrapper (`saveSession`, `listSessions`, `getSession`, `deleteSession`, `clearAll`) |
+| `src/components/CaptionApp.astro` | NEW "Recent sessions" section on idle, NEW `<dialog id="cp-session-view">` for viewer |
+| `src/components/CaptionApp.script.ts` | On `stopPipeline()`: persist session if transcript.length >= 5 words. On mount: render recent sessions list. Wire `[view]` click. |
+| `src/pages/index.astro` | New FAQ Q&A |
+| `src/pages/privacy.astro` | One-sentence addendum |
+| `tests/sessionStore.test.ts` | NEW (5-6 cases via fake-indexeddb npm package or manual mock) |
+
+### Success criteria
+
+- Session persisted after Stop with >= 5 words of transcript
+- Recent sessions list shows on idle screen after reload (verifying IndexedDB persistence)
+- View dialog shows full transcript with all segments
+- Download buttons in view dialog produce correct .txt / .vtt / .srt
+- Clear all history empties the list + the IndexedDB store
+- 20-session cap enforced (insert 21st → oldest dropped)
+
+## 4.0.4 Out of scope (still deferred)
+
+- AudioWorklet migration (defer to v0.4.1)
+- Speaker diarization (defer to v0.4.2)
+- Real translate via NLLB (defer to v0.5)
+- Browser extension (defer to v0.5)
+- Search across stored sessions (defer to v0.4.3 once enough sessions exist to matter)
+- Session export-as-JSON / cross-browser import (defer to v0.4.3)
+
+## 4.0.5 Persistence
+
+```
+livecaptionit-history (IndexedDB)         — session transcripts, 20-cap
+                                            (object store: sessions)
+livecaptionit:shortcuts-tooltip-seen      — "1" once user has dismissed
+                                            the keyboard shortcuts footer
+                                            (defer to user feedback first)
+```
+
+No new localStorage keys required for sample demo — the existing
+`livecaptionit:source-pref` is reused with new value `"sample"` only during
+active sample session, never persisted as the user's preference.
+
+## 4.0.6 Manual test checklist
+
+### Sample demo
+- [ ] Idle screen shows "Try with sample audio" button
+- [ ] Click → no permission prompt, sample plays through speakers, captions stream
+- [ ] Auto-stop on audio end → stopped substate, full transcript visible
+- [ ] Download .txt works post-sample
+- [ ] Click "Start new" → back to idle, sample button still works
+- [ ] Real "Start captions" still works (no regression)
+- [ ] Sample works in PiP (click Pop Out after sample starts)
+
+### Keyboard shortcuts
+- [ ] Idle: Enter triggers Start captions
+- [ ] Active+live: Space pauses (status banner reflects), Space resumes
+- [ ] Active+live: Escape stops (same as Stop button)
+- [ ] Active+live: P opens PiP
+- [ ] Active+live in PiP: P closes PiP
+- [ ] Stopped: R triggers Start new
+- [ ] Stopped: D downloads .txt
+- [ ] `?` opens help overlay, Esc closes it
+- [ ] Typing in a text input doesn't trigger shortcuts
+
+### Session replay
+- [ ] After a >= 5 word session, reload page → "Recent sessions" shows entry
+- [ ] Click [view] → dialog opens with full transcript
+- [ ] Download .txt from dialog matches what was captured live
+- [ ] Stop two sessions → both appear, most-recent first
+- [ ] Run 21 sessions → only most-recent 20 retained
+- [ ] Clear all history → list empties, reload confirms
+- [ ] Privacy FAQ + page mention storage honestly
+
+## 4.0.7 Success criteria (overall)
+
+- Sample demo: visitor sees captions in < 3s without ANY permission prompts
+- Keyboard shortcuts: all listed shortcuts functional + non-blocking on inputs
+- Session replay: persistence + view + download + clear all green
+- Brand-grep clean (no "captionpip" except intentional `_headers` legacy rule)
+- 43/43 existing vitest tests still green + new tests for each module
+- `npm run build` + `npx astro check` clean
+
+## 4.0.8 Estimated commits
+
+| # | Scope | LOC est |
+|---|---|---|
+| 1 | docs(spec): v0.4.0 scope lock | ~250 |
+| 2 | feat(sample): public/sample.mp3 + sampleFeed.ts + tests | ~150 |
+| 3 | feat(sample): wire Try button + UI integration | ~80 |
+| 4 | feat(ui): keyboard shortcuts + help overlay + tests | ~180 |
+| 5 | feat(history): sessionStore.ts + IndexedDB tests | ~200 |
+| 6 | feat(history): UI integration (idle list + viewer dialog) | ~120 |
+| 7 | docs(faq): privacy disclosure for session storage | ~30 |
+
+Total: ~1010 LOC, 7 commits.
