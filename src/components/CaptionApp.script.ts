@@ -51,6 +51,12 @@ import {
   displayKey as displayShortcutKey,
 } from "../lib/shortcutOverrides";
 import {
+  loadVocabulary,
+  saveVocabulary,
+  countTerms as countVocabTerms,
+  VOCABULARY_MAX_CHARS,
+} from "../lib/vocabulary";
+import {
   saveSession,
   listSessions,
   getSession,
@@ -530,6 +536,57 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     for (const [hfId, cached] of results) modelCacheStatus[hfId] = cached;
     renderModelList();
   })();
+
+  // v0.4.3 — Custom vocabulary panel wiring.
+  // Persists to localStorage on input (debounced). Worker is told the
+  // sanitized version every save AND at the top of every startPipeline().
+  // The textarea displays the raw string the user typed; sanitization
+  // happens only on save / on send-to-worker so the user's cursor +
+  // typing flow aren't disrupted mid-edit.
+  const vocabInput = rootEl.querySelector<HTMLTextAreaElement>("#cp-vocab-input");
+  const vocabChars = rootEl.querySelector<HTMLSpanElement>("#cp-vocab-chars");
+  const vocabCount = rootEl.querySelector<HTMLSpanElement>("#cp-vocab-count");
+  const vocabClearBtn = rootEl.querySelector<HTMLButtonElement>("#cp-vocab-clear");
+
+  function renderVocabCounter(text: string): void {
+    const n = countVocabTerms(text);
+    if (vocabChars) {
+      vocabChars.textContent = `${text.length} / ${VOCABULARY_MAX_CHARS} characters`;
+    }
+    if (vocabCount) {
+      vocabCount.textContent = n > 0 ? `(${n})` : "";
+    }
+  }
+
+  let vocabSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  function scheduleVocabSave(): void {
+    if (vocabSaveTimer) clearTimeout(vocabSaveTimer);
+    vocabSaveTimer = setTimeout(() => {
+      const text = vocabInput?.value ?? "";
+      const cleaned = saveVocabulary(text);
+      // Push to worker if one exists. Safe to call even if worker is
+      // mid-init — worker just stores the string, doesn't act on it.
+      whisper?.setVocabulary(cleaned);
+    }, 300);
+  }
+
+  if (vocabInput) {
+    vocabInput.value = loadVocabulary();
+    renderVocabCounter(vocabInput.value);
+    vocabInput.addEventListener("input", () => {
+      renderVocabCounter(vocabInput.value);
+      scheduleVocabSave();
+    });
+  }
+  vocabClearBtn?.addEventListener("click", () => {
+    if (vocabInput) {
+      vocabInput.value = "";
+      renderVocabCounter("");
+    }
+    saveVocabulary("");
+    whisper?.setVocabulary("");
+    toast.success("Vocabulary cleared");
+  });
 
   // ── Caption style prefs: drive CSS custom properties on the caption box
   //    so changes apply LIVE to both inline and PiP rendering. Position
@@ -1052,6 +1109,10 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     // ── Step 2: kick off worker init in the background (no await yet) ──
     // We want it loading WHILE the user is in the tab picker, not after.
     whisper = createWhisperClient("/whisper-worker.js");
+    // v0.4.3 — push current vocabulary BEFORE init resolves so the first
+    // transcribe call already has it. setVocabulary is safe pre-init (worker
+    // just stores the string until transcribe needs it).
+    whisper.setVocabulary(loadVocabulary());
     whisper.onStatus((s) => {
       switch (s.type) {
         case "loading":
@@ -1165,6 +1226,8 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
 
     // Kick off worker init in background (same model preference as live).
     whisper = createWhisperClient("/whisper-worker.js");
+    // v0.4.3 — push current vocabulary BEFORE init (same as live path).
+    whisper.setVocabulary(loadVocabulary());
     whisper.onStatus((s) => {
       switch (s.type) {
         case "loading":

@@ -30,6 +30,19 @@ env.useBrowserCache = true;
 let asr = null;
 let currentModel = "";
 
+// v0.4.3 — custom vocabulary biasing.
+// Whisper takes an `initial_prompt` string per call that's prepended to
+// the decoder context. Terms in the prompt are tokenized once and seen
+// by the decoder, so it's much more likely to emit them when audio
+// resembles them. Examples: brand names, acronyms, technical jargon,
+// non-English proper nouns that English Whisper would otherwise butcher.
+//
+// Storage = a single string set by `setVocabulary` from the parent.
+// Empty string disables (default). Capped at ~200 chars to avoid eating
+// the whisper context window (decoder has finite room — prompts that
+// are too long crowd out the actual audio's transcription budget).
+let vocabularyPrompt = "";
+
 // Default model — onnx-community port has all dtype variants.
 const DEFAULT_MODEL = "onnx-community/whisper-base";
 
@@ -175,6 +188,11 @@ async function transcribe(audio, id) {
       // CaptionApp.script.ts still scans for residual patterns in case
       // the decoder slips one past.
       no_repeat_ngram_size: 3,
+      // v0.4.3 — vocabulary biasing. transformers.js accepts an
+      // `initial_prompt` string and tokenizes it internally before
+      // each transcribe call. Empty string = noop. We always pass
+      // it (even when empty) for shape consistency.
+      initial_prompt: vocabularyPrompt || undefined,
     });
     const text = (result && result.text ? result.text : "").trim();
     const durationMs = Math.round(performance.now() - start);
@@ -196,6 +214,14 @@ self.onmessage = async (e) => {
     case "dispose":
       asr = null;
       currentModel = "";
+      break;
+    case "setVocabulary":
+      // Cap at 200 chars to avoid crowding Whisper's decoder context.
+      // We could let it grow, but past ~200 chars the prompt starts
+      // displacing audio transcription budget for no quality gain.
+      vocabularyPrompt = (data.text && typeof data.text === "string"
+        ? data.text.slice(0, 200).trim()
+        : "");
       break;
     default:
       // ignore unknown

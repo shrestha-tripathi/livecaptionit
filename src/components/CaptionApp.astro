@@ -165,6 +165,46 @@
       </p>
     </details>
 
+    {/* ── Custom vocabulary (collapsible, v0.4.3) ── */}
+    <details
+      id="cp-vocab-prefs"
+      class="mt-3 max-w-md mx-auto text-left rounded-lg bg-[var(--color-surface)] shadow-line group"
+    >
+      <summary class="cursor-pointer select-none px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-[var(--color-fg-muted)] flex items-center justify-between">
+        <span class="inline-flex items-center gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+          Custom vocabulary
+          <span id="cp-vocab-count" class="text-[10px] font-normal normal-case tracking-normal text-[var(--color-fg-subtle)]"></span>
+        </span>
+        <svg class="transition-transform group-open:rotate-180" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </summary>
+      <div class="px-4 py-3 space-y-2.5">
+        <label class="block">
+          <span class="sr-only">Custom vocabulary terms</span>
+          <textarea
+            id="cp-vocab-input"
+            rows="3"
+            maxlength="200"
+            placeholder="kubectl, Kubernetes, OAuth2, Anthropic, NeurIPS"
+            class="w-full text-xs px-2.5 py-1.5 rounded-md bg-[var(--color-bg)] text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)] border border-[var(--color-border)] focus:outline-none focus:border-[var(--color-brand)] transition-colors resize-y leading-relaxed"
+            spellcheck="false"
+            autocomplete="off"
+          ></textarea>
+        </label>
+        <div class="flex items-center justify-between text-[10px] text-[var(--color-fg-subtle)]">
+          <span id="cp-vocab-chars">0 / 200 characters</span>
+          <button
+            type="button"
+            id="cp-vocab-clear"
+            class="text-[var(--color-fg-subtle)] hover:text-[var(--color-fg-muted)] transition-colors"
+          >Clear</button>
+        </div>
+        <p class="text-[10px] text-[var(--color-fg-subtle)] leading-snug">
+          Comma-separated terms biased into the transcription. Add proper nouns, technical jargon, or brand names Whisper would otherwise mis-hear. Applies on next Start.
+        </p>
+      </div>
+    </details>
+
     {/* ── Caption style (collapsible) ── */}
     <details
       id="cp-style-prefs"
