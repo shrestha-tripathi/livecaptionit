@@ -71,11 +71,34 @@
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l3 2"/></svg>
           Recent sessions
         </span>
-        <button
-          id="cp-history-clear"
-          type="button"
-          class="text-[10px] font-normal normal-case tracking-normal text-[var(--color-fg-subtle)] hover:text-[var(--color-fg-muted)] transition-colors"
-        >Clear all</button>
+        <div class="flex items-center gap-2.5">
+          {/* v0.4.2: export/import controls. Hidden input feeds the file picker
+              triggered by the Import button. */}
+          <button
+            id="cp-history-export"
+            type="button"
+            class="text-[10px] font-normal normal-case tracking-normal text-[var(--color-fg-subtle)] hover:text-[var(--color-fg-muted)] transition-colors"
+            title="Download all sessions as a JSON backup"
+          >Export</button>
+          <button
+            id="cp-history-import"
+            type="button"
+            class="text-[10px] font-normal normal-case tracking-normal text-[var(--color-fg-subtle)] hover:text-[var(--color-fg-muted)] transition-colors"
+            title="Import sessions from a previously exported JSON file"
+          >Import</button>
+          <input
+            id="cp-history-import-file"
+            type="file"
+            accept=".json,application/json"
+            class="hidden"
+            aria-hidden="true"
+          />
+          <button
+            id="cp-history-clear"
+            type="button"
+            class="text-[10px] font-normal normal-case tracking-normal text-[var(--color-fg-subtle)] hover:text-[var(--color-fg-muted)] transition-colors"
+          >Clear all</button>
+        </div>
       </header>
       {/* v0.4.2: search input — auto-hidden by script.ts when ≤2 sessions exist
           (search is friction with that few entries). */}
@@ -98,6 +121,12 @@
       {/* v0.4.2: empty-state for search no-match (script.ts toggles via .hidden) */}
       <p id="cp-history-empty" class="hidden px-4 py-3 text-xs italic text-[var(--color-fg-subtle)]">
         No sessions match — try another search.
+      </p>
+      {/* v0.4.2: empty-state for "no sessions recorded yet"
+          (script.ts toggles via .hidden). Distinct from the no-match
+          state above so the messaging stays accurate. */}
+      <p id="cp-history-empty-zero" class="hidden px-4 py-3 text-xs italic text-[var(--color-fg-subtle)]">
+        No sessions recorded yet. Record one above, or use <strong class="font-semibold not-italic">Import</strong> to restore a previous backup.
       </p>
     </div>
 

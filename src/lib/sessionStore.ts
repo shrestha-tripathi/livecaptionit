@@ -201,6 +201,164 @@ export async function clearAll(idb?: IDBFactory): Promise<void> {
   });
 }
 
+// ────────────────────────────────────────────────────────────────────────
+// v0.4.2 — JSON export / import
+// ────────────────────────────────────────────────────────────────────────
+
+/**
+ * Version-1 export bundle shape. Future versions get a migration path
+ * via `importSessions` rejecting unknown versions explicitly — never a
+ * silent break. Bump the schema version + add an `if (bundle.version === N)`
+ * branch in importSessions whenever you change StoredSession.
+ */
+export const EXPORT_VERSION = 1 as const;
+
+export interface ExportBundle {
+  /** Schema version. Locked at 1 for v0.4.2. */
+  version: 1;
+  /** ISO timestamp of when the export was generated. Informational only. */
+  exportedAt: string;
+  /** App version that produced the bundle. Informational only. */
+  appVersion: string;
+  /** All sessions, ordered newest first (same as listSessions). */
+  sessions: StoredSession[];
+}
+
+export interface ImportResult {
+  /** Sessions newly inserted into the store. */
+  imported: number;
+  /** Sessions skipped because their id already existed. */
+  skipped: number;
+  /** Sessions pruned during import to honour MAX_SESSIONS cap. */
+  pruned: number;
+}
+
+/** Build an ExportBundle from the current store contents. */
+export async function exportAllSessions(
+  idb?: IDBFactory,
+  appVersion = "0.4.2",
+): Promise<ExportBundle> {
+  const sessions = await listSessions(idb);
+  return {
+    version: EXPORT_VERSION,
+    exportedAt: new Date().toISOString(),
+    appVersion,
+    sessions,
+  };
+}
+
+/**
+ * Lightweight runtime validation for an imported bundle. Throws an Error
+ * with a user-friendly message if the input is not a valid v1 bundle.
+ * We deliberately don't use a schema library — keeps the lib zero-deps.
+ */
+export function validateExportBundle(input: unknown): asserts input is ExportBundle {
+  if (typeof input !== "object" || input === null) {
+    throw new Error("Invalid file: expected a JSON object.");
+  }
+  const obj = input as Record<string, unknown>;
+  if (obj.version !== EXPORT_VERSION) {
+    throw new Error(
+      `Unsupported export version: ${String(obj.version)} (this build expects version ${EXPORT_VERSION}). The file may have been created by a newer version of LiveCaptionIt.`,
+    );
+  }
+  if (!Array.isArray(obj.sessions)) {
+    throw new Error("Invalid file: missing or malformed `sessions` array.");
+  }
+  for (const s of obj.sessions) {
+    if (typeof s !== "object" || s === null) {
+      throw new Error("Invalid file: `sessions` contains a non-object entry.");
+    }
+    const ss = s as Record<string, unknown>;
+    if (
+      typeof ss.id !== "string" ||
+      typeof ss.startedAt !== "number" ||
+      typeof ss.endedAt !== "number" ||
+      (ss.source !== "tab" && ss.source !== "mic" && ss.source !== "sample") ||
+      typeof ss.modelId !== "string" ||
+      !Array.isArray(ss.transcript) ||
+      typeof ss.preview !== "string"
+    ) {
+      throw new Error("Invalid file: a session entry is missing required fields.");
+    }
+  }
+}
+
+/**
+ * Import sessions from a parsed-and-validated ExportBundle. Inserts each
+ * session with skip-on-duplicate-id semantics, then prunes oldest by
+ * `startedAt` if the store exceeds MAX_SESSIONS after the import. Returns
+ * counts so the UI can surface a clear "X imported, Y skipped" toast.
+ *
+ * Implementation note: each session goes through a SEPARATE add — we
+ * deliberately do NOT use a single transaction for the whole import.
+ * Reasons:
+ *   - Skip-on-duplicate-id is easier to express per-row (one `get` +
+ *     conditional `add`) than as a bulk operation
+ *   - On partial failure (e.g. one malformed session slips past validation),
+ *     successful imports survive instead of the whole bundle rolling back
+ *   - The 20-session cap means N <= 20, so transaction-overhead concern
+ *     is negligible
+ */
+export async function importSessions(
+  bundle: ExportBundle,
+  idb?: IDBFactory,
+): Promise<ImportResult> {
+  const factory = idb ?? globalThis.indexedDB;
+  const db = await openDB(factory);
+
+  // Snapshot the pre-import count so we can compute `pruned` accurately
+  // after saveSession's per-insert prune-on-cap fires.
+  const preCount = await new Promise<number>((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readonly");
+    const req = tx.objectStore(STORE_NAME).count();
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error ?? new Error("count failed"));
+  });
+
+  let imported = 0;
+  let skipped = 0;
+
+  for (const session of bundle.sessions) {
+    const existed = await new Promise<boolean>((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, "readonly");
+      const req = tx.objectStore(STORE_NAME).get(session.id);
+      req.onsuccess = () => resolve(req.result !== undefined);
+      req.onerror = () => reject(req.error ?? new Error("get failed"));
+    });
+    if (existed) {
+      skipped++;
+      continue;
+    }
+    // Use the canonical writer (saveSession) so preview is regenerated
+    // and the prune-on-cap logic runs consistently with normal inserts.
+    await saveSession(
+      {
+        id: session.id,
+        startedAt: session.startedAt,
+        endedAt: session.endedAt,
+        source: session.source,
+        modelId: session.modelId,
+        transcript: session.transcript,
+      },
+      factory,
+    );
+    imported++;
+  }
+
+  const postCount = await new Promise<number>((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readonly");
+    const req = tx.objectStore(STORE_NAME).count();
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error ?? new Error("count failed"));
+  });
+  // pruned = sessions that landed but got immediately evicted by the
+  // per-insert MAX_SESSIONS cap. = (pre + imported) - post.
+  const pruned = Math.max(0, preCount + imported - postCount);
+
+  return { imported, skipped, pruned };
+}
+
 /**
  * Reset the cached DB promise — primarily for unit tests that swap in
  * `fake-indexeddb` between cases. Not used in production code.

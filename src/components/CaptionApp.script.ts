@@ -47,6 +47,9 @@ import {
   getSession,
   deleteSession,
   clearAll as clearAllSessions,
+  exportAllSessions,
+  importSessions,
+  validateExportBundle,
   type StoredSession,
   type SessionSource,
 } from "../lib/sessionStore";
@@ -274,6 +277,11 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
   const historySearchWrap = rootEl.querySelector<HTMLDivElement>("#cp-history-search-wrap")!;
   const historySearchInput = rootEl.querySelector<HTMLInputElement>("#cp-history-search")!;
   const historyEmpty = rootEl.querySelector<HTMLParagraphElement>("#cp-history-empty")!;
+  // v0.4.2 — export/import UI refs
+  const historyExportBtn = rootEl.querySelector<HTMLButtonElement>("#cp-history-export")!;
+  const historyImportBtn = rootEl.querySelector<HTMLButtonElement>("#cp-history-import")!;
+  const historyImportFile = rootEl.querySelector<HTMLInputElement>("#cp-history-import-file")!;
+  const historyEmptyZero = rootEl.querySelector<HTMLParagraphElement>("#cp-history-empty-zero")!;
   const sessionViewDialog = rootEl.querySelector<HTMLDialogElement>("#cp-session-view")!;
   const sessionViewMeta = rootEl.querySelector<HTMLSpanElement>("#cp-session-view-meta")!;
   const sessionViewBody = rootEl.querySelector<HTMLDivElement>("#cp-session-view-body")!;
@@ -1419,16 +1427,24 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
    *  and the empty-state messaging (no sessions vs no-match). */
   function applySearchFilter() {
     if (cachedSessions.length === 0) {
-      historyPanel.classList.add("hidden");
+      // v0.4.2: keep the panel visible (so Import is reachable for a user
+      // restoring a backup on a fresh device) but strip everything else.
+      historyPanel.classList.remove("hidden");
       historyList.innerHTML = "";
       historyEmpty.classList.add("hidden");
+      historyEmptyZero.classList.remove("hidden");
       historySearchWrap.classList.add("hidden");
+      historyExportBtn.classList.add("hidden");
+      historyClearBtn.classList.add("hidden");
       // Reset search state so a future post-recording panel reopen starts clean.
       currentQuery = "";
       historySearchInput.value = "";
       return;
     }
     historyPanel.classList.remove("hidden");
+    historyExportBtn.classList.remove("hidden");
+    historyClearBtn.classList.remove("hidden");
+    historyEmptyZero.classList.add("hidden");
     // Search input only shows once we have enough sessions for it to be
     // useful — under 3 entries the user can just scan the list.
     historySearchWrap.classList.toggle("hidden", cachedSessions.length < 3);
@@ -1540,6 +1556,70 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     void clearAllSessions()
       .then(() => renderHistory())
       .catch((err) => console.warn("[LiveCaptionIt] clearAll failed:", err));
+  });
+
+  // ── v0.4.2: JSON export / import ──
+  // Export: serialize the current store to a JSON file. No confirmation
+  // needed — export is non-destructive. Filename uses YYYY-MM-DD so the
+  // user has a sortable history of backups.
+  historyExportBtn.addEventListener("click", () => {
+    void (async () => {
+      try {
+        const bundle = await exportAllSessions();
+        if (bundle.sessions.length === 0) {
+          alert("No sessions to export yet — record at least one session first.");
+          return;
+        }
+        const yyyymmdd = new Date().toISOString().slice(0, 10);
+        const filename = `livecaptionit-history-${yyyymmdd}.json`;
+        downloadString(
+          filename,
+          JSON.stringify(bundle, null, 2),
+          "application/json;charset=utf-8",
+        );
+      } catch (err) {
+        console.warn("[LiveCaptionIt] export failed:", err);
+        alert(
+          `Couldn't export sessions: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    })();
+  });
+
+  // Import: button click triggers the hidden <input type=file>. The file
+  // change handler reads, parses, validates, imports, then re-renders.
+  // Non-destructive by default (skip-on-duplicate-id).
+  historyImportBtn.addEventListener("click", () => {
+    // Reset value so picking the SAME file twice still fires `change`.
+    historyImportFile.value = "";
+    historyImportFile.click();
+  });
+  historyImportFile.addEventListener("change", () => {
+    const file = historyImportFile.files?.[0];
+    if (!file) return;
+    void (async () => {
+      try {
+        const text = await file.text();
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(text);
+        } catch {
+          throw new Error("File isn't valid JSON. Make sure you picked a LiveCaptionIt export.");
+        }
+        validateExportBundle(parsed); // throws with user-friendly message
+        const result = await importSessions(parsed);
+        await renderHistory();
+        const parts = [`${result.imported} imported`];
+        if (result.skipped > 0) parts.push(`${result.skipped} skipped (already present)`);
+        if (result.pruned > 0) parts.push(`${result.pruned} pruned (over 20-session cap)`);
+        alert(`Import complete: ${parts.join(", ")}.`);
+      } catch (err) {
+        console.warn("[LiveCaptionIt] import failed:", err);
+        alert(
+          `Couldn't import sessions: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    })();
   });
   // Initial render on page load
   void renderHistory();

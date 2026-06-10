@@ -207,3 +207,212 @@ describe("sessionStore CRUD", () => {
     expect(list[0].transcript[0].words.join(" ")).toBe("updated");
   });
 });
+
+
+// ────────────────────────────────────────────────────────────────────────
+// v0.4.2 — JSON export / import
+// ────────────────────────────────────────────────────────────────────────
+
+import {
+  exportAllSessions,
+  importSessions,
+  validateExportBundle,
+  EXPORT_VERSION,
+  type ExportBundle,
+} from "./sessionStore";
+
+describe("exportAllSessions / importSessions roundtrip", () => {
+  it("exports an empty store as a valid v1 bundle", async () => {
+    const bundle = await exportAllSessions();
+    expect(bundle.version).toBe(EXPORT_VERSION);
+    expect(bundle.sessions).toEqual([]);
+    expect(typeof bundle.exportedAt).toBe("string");
+    expect(typeof bundle.appVersion).toBe("string");
+    // exportedAt must be ISO parseable
+    expect(Number.isNaN(new Date(bundle.exportedAt).getTime())).toBe(false);
+  });
+
+  it("full roundtrip preserves all fields", async () => {
+    await saveSession({
+      startedAt: 1000,
+      endedAt: 2000,
+      source: "tab",
+      modelId: "base",
+      transcript: [mkSegment("hello world")],
+    });
+    await saveSession({
+      startedAt: 3000,
+      endedAt: 4000,
+      source: "mic",
+      modelId: "small",
+      transcript: [mkSegment("second one")],
+    });
+
+    const bundle = await exportAllSessions();
+    expect(bundle.sessions).toHaveLength(2);
+
+    // Clear, re-import, verify everything came back.
+    await clearAll();
+    expect(await listSessions()).toEqual([]);
+
+    const result = await importSessions(bundle);
+    expect(result.imported).toBe(2);
+    expect(result.skipped).toBe(0);
+    expect(result.pruned).toBe(0);
+
+    const restored = await listSessions();
+    expect(restored).toHaveLength(2);
+    expect(restored.map((s) => s.source).sort()).toEqual(["mic", "tab"]);
+    expect(restored.find((s) => s.source === "tab")?.transcript[0].words.join(" ")).toBe("hello world");
+    expect(restored.find((s) => s.source === "mic")?.modelId).toBe("small");
+  });
+
+  it("skips duplicates by id (no overwrite)", async () => {
+    const existing = await saveSession({
+      startedAt: 1000,
+      endedAt: 2000,
+      source: "tab",
+      modelId: "base",
+      transcript: [mkSegment("original")],
+    });
+
+    // Build a bundle containing the existing id with DIFFERENT transcript.
+    const bundle: ExportBundle = {
+      version: EXPORT_VERSION,
+      exportedAt: new Date().toISOString(),
+      appVersion: "test",
+      sessions: [
+        {
+          id: existing.id,
+          startedAt: 9999,
+          endedAt: 99999,
+          source: "mic",
+          modelId: "tiny",
+          transcript: [mkSegment("overwrite attempt")],
+          preview: "overwrite attempt",
+        },
+      ],
+    };
+
+    const result = await importSessions(bundle);
+    expect(result.imported).toBe(0);
+    expect(result.skipped).toBe(1);
+
+    // Original is untouched.
+    const got = await getSession(existing.id);
+    expect(got?.transcript[0].words.join(" ")).toBe("original");
+    expect(got?.source).toBe("tab");
+  });
+
+  it("enforces MAX_SESSIONS cap on import (oldest pruned)", async () => {
+    // Pre-populate with 15 sessions (under cap).
+    for (let i = 0; i < 15; i++) {
+      await saveSession({
+        startedAt: 1000 + i,
+        endedAt: 2000 + i,
+        source: "tab",
+        modelId: "base",
+        transcript: [mkSegment(`pre-${i}`)],
+      });
+    }
+    expect(await listSessions()).toHaveLength(15);
+
+    // Import 10 more — total would be 25, cap should bring it back to 20.
+    const sessions = Array.from({ length: 10 }, (_, i) => ({
+      id: `imported-${i}`,
+      startedAt: 100000 + i, // all newer than pre-existing
+      endedAt: 100001 + i,
+      source: "mic" as const,
+      modelId: "small",
+      transcript: [mkSegment(`imp-${i}`)],
+      preview: `imp-${i}`,
+    }));
+    const bundle: ExportBundle = {
+      version: EXPORT_VERSION,
+      exportedAt: new Date().toISOString(),
+      appVersion: "test",
+      sessions,
+    };
+
+    const result = await importSessions(bundle);
+    expect(result.imported).toBe(10);
+    expect(result.skipped).toBe(0);
+    expect(result.pruned).toBe(5);
+
+    const after = await listSessions();
+    expect(after).toHaveLength(MAX_SESSIONS);
+    // The 5 oldest pre-existing should have been pruned; all 10 imports survive.
+    expect(after.filter((s) => s.id.startsWith("imported-"))).toHaveLength(10);
+  });
+});
+
+describe("validateExportBundle", () => {
+  it("accepts a valid v1 bundle", () => {
+    const valid: ExportBundle = {
+      version: EXPORT_VERSION,
+      exportedAt: new Date().toISOString(),
+      appVersion: "test",
+      sessions: [],
+    };
+    expect(() => validateExportBundle(valid)).not.toThrow();
+  });
+
+  it("rejects non-object input", () => {
+    expect(() => validateExportBundle(null)).toThrow(/expected a JSON object/i);
+    expect(() => validateExportBundle("string")).toThrow(/expected a JSON object/i);
+    expect(() => validateExportBundle(42)).toThrow(/expected a JSON object/i);
+  });
+
+  it("rejects unknown version (forward-compat)", () => {
+    expect(() =>
+      validateExportBundle({
+        version: 99,
+        exportedAt: "",
+        appVersion: "",
+        sessions: [],
+      }),
+    ).toThrow(/unsupported export version/i);
+  });
+
+  it("rejects missing sessions array", () => {
+    expect(() =>
+      validateExportBundle({
+        version: EXPORT_VERSION,
+        exportedAt: "",
+        appVersion: "",
+      }),
+    ).toThrow(/sessions/i);
+  });
+
+  it("rejects session entry missing required fields", () => {
+    expect(() =>
+      validateExportBundle({
+        version: EXPORT_VERSION,
+        exportedAt: "",
+        appVersion: "",
+        sessions: [{ id: "x", source: "tab" }], // missing startedAt etc.
+      }),
+    ).toThrow(/missing required fields/i);
+  });
+
+  it("rejects session with invalid source enum", () => {
+    expect(() =>
+      validateExportBundle({
+        version: EXPORT_VERSION,
+        exportedAt: "",
+        appVersion: "",
+        sessions: [
+          {
+            id: "x",
+            startedAt: 1,
+            endedAt: 2,
+            source: "stream", // not in enum
+            modelId: "base",
+            transcript: [],
+            preview: "",
+          },
+        ],
+      }),
+    ).toThrow(/missing required fields/i);
+  });
+});
