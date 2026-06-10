@@ -82,6 +82,7 @@ import {
   createWhisperClient,
   AVAILABLE_MODELS,
   DEFAULT_MODEL_ID,
+  MOBILE_DEFAULT_MODEL_ID,
   modelById,
   isModelCached,
   type WhisperClient,
@@ -268,12 +269,16 @@ function saveCaptionStyle(s: CaptionStyle) {
   } catch {}
 }
 
-function loadModelPref(): ModelSpec["id"] {
+function loadModelPref(isMobile = false): ModelSpec["id"] {
   try {
     const raw = localStorage.getItem(MODEL_PREF_KEY);
-    if (raw === "tiny" || raw === "base" || raw === "small") return raw;
+    if (raw === "tiny" || raw === "base" || raw === "small" || raw === "large-turbo") return raw;
   } catch {}
-  return DEFAULT_MODEL_ID;
+  // v0.5.1 — mobile gets `tiny` (39 MB) by default to fit inside the
+  // mobile JS heap budget. Desktop keeps the v0.4.0 default (`base`,
+  // 74 MB). User can still override via the model picker; we only
+  // pick the default when no pref is stored.
+  return isMobile ? MOBILE_DEFAULT_MODEL_ID : DEFAULT_MODEL_ID;
 }
 function saveModelPref(id: ModelSpec["id"]) {
   try {
@@ -514,9 +519,11 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     // Force mic source + show explainer instead of disabling Start entirely.
     // On mobile we use a SOFTER message because tab/screen capture isn't a
     // browser bug — it's a platform limitation; users shouldn't feel like
-    // their device is broken.
+    // their device is broken. v0.5.1 also tells mobile users WHY we use
+    // Tiny + WASM defaults so they understand the trade-off (smaller
+    // model + slower CPU runtime, but no OOM crashes mid-capture).
     supportWarn.textContent = isMobile
-      ? "On mobile, captioning works with your microphone — point it at any audio source (speaker, headphones, another device)."
+      ? "On mobile, captioning uses your microphone — point it at any audio source (speaker, headphones, another device). We use the Tiny model + CPU-mode by default for memory safety; switch to Base/Small in the model picker if your device has plenty of RAM."
       : "Your browser doesn't support tab/screen audio capture. Microphone-only mode is still available — pick 'Microphone' above.";
     supportWarn.classList.remove("hidden");
     // Force the Tab radio off + Mic radio on (and disable the tab radio).
@@ -629,7 +636,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
   // ── Model picker: render the radio list with size + cache indicators ──
   //   Cache check is async → render once synchronously (no checks), then
   //   re-render after the cache probes resolve so the indicators light up.
-  let selectedModelId: ModelSpec["id"] = loadModelPref();
+  let selectedModelId: ModelSpec["id"] = loadModelPref(isMobile);
   let modelCacheStatus: Record<string, boolean> = {};
   function renderModelList() {
     modelList.innerHTML = "";
@@ -1429,8 +1436,17 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     // Resolve user's model preference to its HF ID + pass to worker init.
     // Re-read pref at start time so changes made in the prefs panel since
     // the page loaded take effect on this run.
-    const activeModel = modelById(loadModelPref());
-    const initPromise = whisper.init(activeModel.hfId).catch((e) => {
+    const activeModel = modelById(loadModelPref(isMobile));
+    // v0.5.1: on mobile, force the worker to skip the WebGPU adapter
+    // probe entirely. Mobile WebGPU was the silent 120s hang masquerading
+    // as a page crash — Chrome Android sometimes returns a working
+    // adapter, sometimes hangs, sometimes returns one that OOMs during
+    // weight transfer. WASM is consistently slower but consistently
+    // works. Desktop still tries WebGPU first.
+    const initPromise = whisper.init(
+      activeModel.hfId,
+      isMobile ? { forceDevice: "wasm" } : undefined,
+    ).catch((e) => {
       showError(`Couldn't load Whisper: ${(e as Error).message}`);
     });
 
@@ -1540,8 +1556,17 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
           break;
       }
     });
-    const activeModel = modelById(loadModelPref());
-    const initPromise = whisper.init(activeModel.hfId).catch((e) => {
+    const activeModel = modelById(loadModelPref(isMobile));
+    // v0.5.1: on mobile, force the worker to skip the WebGPU adapter
+    // probe entirely. Mobile WebGPU was the silent 120s hang masquerading
+    // as a page crash — Chrome Android sometimes returns a working
+    // adapter, sometimes hangs, sometimes returns one that OOMs during
+    // weight transfer. WASM is consistently slower but consistently
+    // works. Desktop still tries WebGPU first.
+    const initPromise = whisper.init(
+      activeModel.hfId,
+      isMobile ? { forceDevice: "wasm" } : undefined,
+    ).catch((e) => {
       showError(`Couldn't load Whisper: ${(e as Error).message}`);
     });
 
@@ -1632,7 +1657,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
       if (totalWords >= 5) {
         const endedAt = Date.now();
         const startedAt = endedAt - (performance.now() - sessionStartMs);
-        const modelId = loadModelPref();
+        const modelId = loadModelPref(isMobile);
         void saveSession({
           startedAt,
           endedAt,
