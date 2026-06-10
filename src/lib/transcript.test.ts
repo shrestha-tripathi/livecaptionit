@@ -244,3 +244,148 @@ describe("v0.5 segment shape helpers", () => {
     });
   });
 });
+
+// ────────────────────────────────────────────────────────────────────────
+// v0.5 commit 6 — cue granularity (segment / sentence / word)
+// ────────────────────────────────────────────────────────────────────────
+
+describe("v0.5 commit 6 — export granularity", () => {
+  describe('granularity = "segment" (default + back-compat)', () => {
+    it("formatVtt default is segment-level (matches no-arg call)", () => {
+      const a = formatVtt(v2Segs);
+      const b = formatVtt(v2Segs, "segment");
+      expect(a).toBe(b);
+    });
+
+    it("formatSrt default is segment-level (matches no-arg call)", () => {
+      const a = formatSrt(v2Segs);
+      const b = formatSrt(v2Segs, "segment");
+      expect(a).toBe(b);
+    });
+
+    it("segment mode produces one cue per input segment for v2 input", () => {
+      const out = formatVtt(v2Segs, "segment");
+      // 3 segments → 3 cues; cue indices "1", "2", "3" appear on their own lines
+      const lines = out.split("\n");
+      expect(lines.filter((l) => l === "1")).toHaveLength(1);
+      expect(lines.filter((l) => l === "2")).toHaveLength(1);
+      expect(lines.filter((l) => l === "3")).toHaveLength(1);
+    });
+  });
+
+  describe('granularity = "word"', () => {
+    it("emits one cue per word with absolute per-word timestamps", () => {
+      // 7 words across the 3 v2 segments → 7 cues
+      const out = formatVtt(v2Segs, "word");
+      const lines = out.split("\n");
+      expect(lines.filter((l) => /^\d+$/.test(l) && +l <= 7)).toHaveLength(7);
+      // First word "Hello" sits at absolute 0-420ms (tMs=0 + word 0-420)
+      expect(out).toContain("00:00:00.000 --> 00:00:00.420");
+      expect(out).toContain("Hello");
+      // Third segment starts at tMs=1600, first word "doing" at +0-400 →
+      // absolute 1600-2000ms
+      expect(out).toContain("00:00:01.600 --> 00:00:02.000");
+      expect(out).toContain("doing");
+    });
+
+    it("clamps minimum cue duration to avoid zero-length cues", () => {
+      // Word with zero duration → cue extends to start + 200ms minimum
+      const zero: TranscriptSegment2[] = [
+        { tMs: 0, words: [w("instant", 100, 100)] },
+      ];
+      const out = formatVtt(zero, "word");
+      expect(out).toContain("00:00:00.100 --> 00:00:00.300");
+    });
+  });
+
+  describe('granularity = "sentence"', () => {
+    it("breaks at sentence-ending punctuation (.!?)", () => {
+      const sentenced: TranscriptSegment2[] = [
+        // Sentence 1: "Hello world."
+        { tMs: 0, words: [w("Hello", 0, 400), w("world.", 400, 1200)] },
+        // Sentence 2: "How are you?"
+        { tMs: 1500, words: [w("How", 0, 200), w("are", 200, 400), w("you?", 400, 700)] },
+        // Sentence 3: "Fine!"
+        { tMs: 2400, words: [w("Fine!", 0, 1100)] },
+      ];
+      const out = formatVtt(sentenced, "sentence");
+      // Should produce 3 cues — one per sentence
+      const cueIndices = out.split("\n").filter((l) => /^\d+$/.test(l));
+      expect(cueIndices.length).toBeGreaterThanOrEqual(3);
+      expect(out).toContain("Hello world.");
+      expect(out).toContain("How are you?");
+      expect(out).toContain("Fine!");
+    });
+
+    it("forces a hard break at 10s (HARD_SENTENCE_BREAK_MS) on no-punctuation input", () => {
+      // Build a 15-second monologue with no punctuation, one word per second.
+      // Should produce at least 2 cues (broken at 10s wall).
+      const words: Word[] = [];
+      for (let i = 0; i < 15; i++) {
+        words.push(w(`word${i}`, i * 1000, i * 1000 + 800));
+      }
+      const monologue: TranscriptSegment2[] = [{ tMs: 0, words }];
+      const out = formatVtt(monologue, "sentence");
+      const cueIndices = out.split("\n").filter((l) => /^\d+$/.test(l));
+      expect(cueIndices.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it("breaks on silence gap > SENTENCE_SILENCE_GAP_MS (600ms)", () => {
+      const withGap: TranscriptSegment2[] = [
+        // First word ends at 500ms, next starts at 2000ms — 1500ms silence > 600ms
+        { tMs: 0, words: [w("First", 0, 500), w("Second", 2000, 2500)] },
+      ];
+      const out = formatVtt(withGap, "sentence");
+      // 2 separate cues expected because of silence-gap break
+      const cueIndices = out.split("\n").filter((l) => /^\d+$/.test(l));
+      expect(cueIndices.length).toBe(2);
+      expect(out).toContain("First");
+      expect(out).toContain("Second");
+    });
+
+    it("does NOT break on a single-word sentence-final fragment (no word count yet)", () => {
+      // "Yes." alone doesn't trigger a break because the cue only has 1 word
+      // at the time we check it. "really" gets appended and the cue flushes
+      // at the end of the timeline as a single cue.
+      const tiny: TranscriptSegment2[] = [
+        { tMs: 0, words: [w("Yes.", 0, 300), w("really", 350, 700)] },
+      ];
+      const out = formatVtt(tiny, "sentence");
+      // 1 cue — "Yes. really" stayed grouped because the punctuation-break
+      // requires current.length >= 2 (and at "Yes." we've only seen 1 word).
+      const cueIndices = out.split("\n").filter((l) => /^\d+$/.test(l));
+      expect(cueIndices.length).toBe(1);
+    });
+  });
+
+  describe("v1 segments fall back to segment mode", () => {
+    it('"sentence" on pure-v1 input behaves like segment mode (no per-word timing available)', () => {
+      const sentenceMode = formatVtt(segs, "sentence");
+      const segmentMode = formatVtt(segs, "segment");
+      expect(sentenceMode).toBe(segmentMode);
+    });
+
+    it('"word" on pure-v1 input behaves like segment mode', () => {
+      const wordMode = formatVtt(segs, "word");
+      const segmentMode = formatVtt(segs, "segment");
+      expect(wordMode).toBe(segmentMode);
+    });
+
+    it('mixed v1+v2 with "sentence" falls back to segment mode', () => {
+      const mixed = [segs[0], v2Segs[1]];
+      const sentenceMode = formatVtt(mixed, "sentence");
+      const segmentMode = formatVtt(mixed, "segment");
+      expect(sentenceMode).toBe(segmentMode);
+    });
+  });
+
+  describe("empty input safety", () => {
+    it('formatVtt with "sentence" on empty input returns just the WEBVTT header', () => {
+      expect(formatVtt([], "sentence")).toBe("WEBVTT\n");
+    });
+
+    it('formatSrt with "word" on empty input returns empty', () => {
+      expect(formatSrt([], "word")).toBe("");
+    });
+  });
+});
