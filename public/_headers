@@ -55,19 +55,26 @@ https://*.captionpip.pages.dev/*
 
 # Whisper worker — short cache + must-revalidate so critical worker
 # changes (mobile fixes, dtype tweaks, transformers.js version bumps)
-# propagate within ~60s instead of being stuck behind 7-day CDN caches.
-# v0.5.1: lowered from max-age=604800 to 60 + must-revalidate after the
-# mobile-WASM fix took ~7d to reach users with stale cached workers.
-# The model weights themselves are cached separately in browser IndexedDB
-# (transformers.js's env.useBrowserCache) so the byte cost of re-checking
-# this 10 KB worker shim every page-load is negligible.
+# can propagate faster than the previous 7-day TTL.
+# v0.5.1: lowered from max-age=604800 → max-age=60 after the mobile-WASM
+# fix took ~7d to reach users with stale cached workers. NOTE: Cloudflare
+# Pages enforces a minimum CDN TTL of ~4h (max-age=14400) for non-/_astro/
+# paths regardless of what's set here, so effective freshness is ~4h
+# at the edge, not 60s. The header value 60 is preserved as documentation
+# of intent + serves as a stronger hint to browser-side caches.
+# For BREAKING worker changes that must land immediately, bump
+# WORKER_VERSION in src/lib/whisperClient.ts — that adds ?v=N to the
+# worker URL, bypassing both browser AND CDN caches via fresh URL.
+# Model weights are cached separately in transformers.js's IndexedDB so
+# re-checking this 10 KB shim every page-load is negligible cost.
 /whisper-worker.js
   Cache-Control: public, max-age=60, must-revalidate
 
-# AudioWorklet processor — same reasoning as whisper-worker.js. The
-# worklet is small (~3 KB) and changes are rare but when they do happen
-# (e.g. the v0.4.1 ScriptProcessor → AudioWorklet migration) they need
-# to land instantly, not after a 4h CDN TTL.
+# AudioWorklet processor — same reasoning as whisper-worker.js. Same
+# CF Pages 4h CDN floor applies. No ?v=N busting equivalent for the
+# worklet currently — if you ever need to ship a critical worklet fix,
+# either wait 4h for natural cache expiry OR rename the file (e.g.
+# audio-worklet-capture-v2.js) and update audioCapture.ts to match.
 /audio-worklet-capture.js
   Cache-Control: public, max-age=60, must-revalidate
 
