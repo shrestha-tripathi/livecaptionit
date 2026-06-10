@@ -579,3 +579,46 @@ body.pip-window .cp-caption-box[data-caption-theme="terminal"] > header {
 @media (max-width: 420px) {
   .cp-tour-popover { width: calc(100vw - 24px) !important; left: 12px !important; }
 }
+
+/* ── Mobile UX pass (v0.4.3) ─────────────────────────────────────────
+   `<html class="is-mobile">` set by CaptionApp.script.ts at boot when
+   isMobileDevice() returns true. Hide PiP-irrelevant UI (Document PiP
+   API is desktop-only) and enlarge tap targets that were sized for
+   precise pointer input. */
+.is-mobile #cp-inline-toggle-wrap,
+.is-mobile #cp-prefs,
+.is-mobile #cp-pip-btn {
+  display: none !important;
+}
+/* Bigger tap targets on the active panel header buttons (Stop / Start new).
+   Apple HIG + Material both target ≥44px / 48dp minimum. Defaults are
+   text-[10px] + py-1 which renders ~22px tall — barely usable on phones. */
+.is-mobile #cp-stop-btn,
+.is-mobile #cp-restart-btn {
+  padding: 0.5rem 0.9rem;
+  font-size: 0.7rem;
+  min-height: 36px;
+}
+/* Download bar buttons feel cramped at 4-up on narrow viewports.
+   Let them wrap and breathe. */
+.is-mobile #cp-download-bar > div {
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.is-mobile #cp-download-bar button {
+  padding: 0.5rem 0.9rem;
+  min-height: 36px;
+}
+/* Source-toggle pills are 2-up — give them a bit more vertical room
+   so they're easier to thumb-tap and the icons don't look squashed. */
+.is-mobile .cp-segment-radio span {
+  padding: 0.55rem 0.85rem;
+  font-size: 0.8rem;
+}
+/* The hero copy mentions "stays on top of any app" which is a PiP
+   promise we can't keep on mobile. Use [data-mobile-hide] /
+   [data-mobile-show] pair so the page swaps to a mobile-truthful copy
+   rather than just blanking the line. Pattern is reusable for any
+   future desktop-only / mobile-only string. */
+.is-mobile [data-mobile-hide] { display: none !important; }
+.is-mobile [data-mobile-show] { display: block !important; }
