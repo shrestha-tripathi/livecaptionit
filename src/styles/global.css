@@ -622,3 +622,38 @@ body.pip-window .cp-caption-box[data-caption-theme="terminal"] > header {
    future desktop-only / mobile-only string. */
 .is-mobile [data-mobile-hide] { display: none !important; }
 .is-mobile [data-mobile-show] { display: block !important; }
+
+/* ────────────────────────────────────────────────────────────────────
+   v0.5 commit 7 — Confidence-tinted live tail words
+   ────────────────────────────────────────────────────────────────────
+
+   Per-word spans rendered by renderLiveLine() when the
+   "Confidence tint" toggle is on. Three buckets map to three opacity
+   levels so wobbly (recently-appeared) words look obviously dimmer
+   than settled (about-to-commit) words.
+
+   Baseline: the parent <span class="live-tail"> already carries the
+   v0.4.x muted colour (text-fg-subtle). data-confidence adds an extra
+   opacity multiplier ON TOP of that to dim further. "high" is full-
+   strength relative to the muted baseline (since the next tick will
+   commit it). "low" is barely visible (40% of baseline) which is the
+   intent — these are guesses Whisper might revoke.
+
+   smooth transition smooths a word's bucket promotion across ticks
+   so it doesn't pop.
+
+   Theme overrides exist in the .cp-caption-box[data-caption-theme]
+   blocks above for live-tail base colour; this rule sits below so
+   data-confidence opacity layers on top regardless of theme. */
+#cp-caption-stream .live-tail-word {
+  transition: opacity 250ms ease-out;
+}
+#cp-caption-stream .live-tail-word[data-confidence="low"] {
+  opacity: 0.4;
+}
+#cp-caption-stream .live-tail-word[data-confidence="med"] {
+  opacity: 0.7;
+}
+#cp-caption-stream .live-tail-word[data-confidence="high"] {
+  opacity: 1;
+}

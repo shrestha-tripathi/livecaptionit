@@ -92,6 +92,7 @@ import { detectSupport, isMobileDevice } from "../lib/browserSupport";
 import { WordAgreement } from "../lib/agreement";
 import type { Word } from "../lib/word";
 import { looksHallucinated } from "../lib/hallucination";
+import { StabilityTracker } from "../lib/confidence";
 import {
   formatTxt,
   formatVtt,
@@ -132,6 +133,13 @@ const SOURCE_PREF_KEY = "livecaptionit:source-pref";
 // transcripts (best for actual subtitling). v1 transcripts silently
 // fall back to "segment" since they have no per-word data.
 const EXPORT_GRANULARITY_KEY = "livecaptionit:export-granularity";
+// v0.5 commit 7: show confidence-tint on live tail words.
+// Boolean. Default OFF — opt-in because (a) some users find the
+// tinting distracting, (b) it's a power-user signal that explains
+// why text sometimes mutates mid-tail. When ON, words in the live
+// tail get a `data-confidence="low|med|high"` attribute that CSS
+// maps to opacity/desaturation. Committed words are always full-strength.
+const SHOW_CONFIDENCE_KEY = "livecaptionit:show-confidence";
 
 type SourceKind = "tab" | "mic";
 function loadSourcePref(): SourceKind {
@@ -157,6 +165,23 @@ function loadExportGranularity(): ExportGranularity {
 }
 function saveExportGranularity(v: ExportGranularity) {
   try { localStorage.setItem(EXPORT_GRANULARITY_KEY, v); } catch {}
+}
+
+/** v0.5 commit 7 — confidence-tint pref (boolean, default OFF).
+ *  Stored as the string "1" for true / absent for false to avoid the
+ *  "true" vs "True" vs JSON-parse-roundtrip churn of boolean storage. */
+function loadShowConfidence(): boolean {
+  try {
+    return localStorage.getItem(SHOW_CONFIDENCE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+function saveShowConfidence(v: boolean) {
+  try {
+    if (v) localStorage.setItem(SHOW_CONFIDENCE_KEY, "1");
+    else localStorage.removeItem(SHOW_CONFIDENCE_KEY);
+  } catch {}
 }
 
 // NOTE: v0.3.0 shipped a translate task toggle (Transcribe vs Translate → English)
@@ -357,6 +382,9 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
   const styleFontScale = rootEl.querySelector<HTMLInputElement>("#cp-style-fontscale")!;
   const styleFontScaleVal = rootEl.querySelector<HTMLSpanElement>("#cp-style-fontscale-val")!;
   const styleShadow = rootEl.querySelector<HTMLInputElement>("#cp-style-shadow")!;
+  // v0.5 commit 7: confidence-tint checkbox. Default unchecked; flips
+  // `showConfidence` + persists pref. Live-applies on next tick.
+  const styleConfidence = rootEl.querySelector<HTMLInputElement>("#cp-style-confidence")!;
   const styleTheme = rootEl.querySelector<HTMLSelectElement>("#cp-style-theme")!;
   const styleResetBtn = rootEl.querySelector<HTMLButtonElement>("#cp-style-reset")!;
   const downloadBar = rootEl.querySelector<HTMLDivElement>("#cp-download-bar")!;
@@ -458,6 +486,13 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
   // Loaded from localStorage at startup; updated via the radio control
   // in the download bar; written back to localStorage on change.
   let currentGranularity: ExportGranularity = loadExportGranularity();
+  // v0.5 commit 7 — confidence-tint state for live-tail rendering.
+  // `showConfidence` mirrors the pref toggle; `stabilityTracker` keeps
+  // per-tick streak history so the same word at the same position
+  // graduates from low → med → high across consecutive hypotheses.
+  // Tracker is reset at every session boundary (start / clear / silence).
+  let showConfidence: boolean = loadShowConfidence();
+  const stabilityTracker = new StabilityTracker();
   if (!support.displayMediaAudio) {
     // No tab-audio capture, but mic mode still works via getUserMedia.
     // Force mic source + show explainer instead of disabling Start entirely.
@@ -778,6 +813,17 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     applyCaptionStyle(captionStyle);
     saveCaptionStyle(captionStyle);
   });
+  // v0.5 commit 7 — confidence-tint init + live persist.
+  styleConfidence.checked = showConfidence;
+  styleConfidence.addEventListener("change", () => {
+    showConfidence = styleConfidence.checked;
+    saveShowConfidence(showConfidence);
+    // Re-render the current live line with the new mode so the toggle
+    // takes immediate visual effect (instead of waiting for the next
+    // tick to roll in). Pass the same items/text that's currently in
+    // play. If nothing's currently in the live tail, this is a no-op.
+    renderLiveLine(agreement.liveLine, agreement.liveItems);
+  });
   // v0.4.3: theme picker
   styleTheme.addEventListener("change", () => {
     const v = styleTheme.value as CaptionTheme;
@@ -1041,8 +1087,17 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
    * Refresh the in-place "live" (uncommitted) tail. Appends as a muted
    * span at the END of the current (last) paragraph so committed +
    * live read as one continuous sentence with two visual weights.
+   *
+   * v0.5 commit 7: optional `items` arg powers per-word confidence
+   * tinting when `showConfidence` is true. Each word becomes its own
+   * `<span class="live-tail-word" data-confidence="low|med|high">`,
+   * with CSS varying opacity/colour by bucket. Empty items → falls
+   * back to the simple-text path (no per-word spans). Passing items
+   * without `showConfidence` enabled also takes the simple path —
+   * the per-word spans are slightly heavier (3× more DOM nodes) so
+   * we don't pay the cost when the user opted out.
    */
-  function renderLiveLine(text: string) {
+  function renderLiveLine(text: string, items: Word[] = []) {
     // Always start by clearing the previous tail (from any paragraph,
     // in case the cursor moved to a new line on the last commit).
     captionStream.querySelectorAll<HTMLSpanElement>("span.live-tail").forEach((el) => el.remove());
@@ -1063,11 +1118,38 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
       lastP.className = "mb-2";
       captionStream.appendChild(lastP);
     }
-    const span = document.createElement("span");
-    span.className = "live-tail text-[var(--color-fg-subtle)] font-normal";
-    span.textContent = (committedWordsIn(lastP) > 0 ? " " : "") + text;
-    lastP.appendChild(span);
+    const tail = document.createElement("span");
+    tail.className = "live-tail font-normal";
 
+    // v0.5 commit 7 — confidence-tint branch. We only render per-word
+    // spans when (a) the user opted in AND (b) we have items to bucket.
+    // The simple-text path remains the v0.4.x behaviour byte-for-byte.
+    const wantConfidence = showConfidence && items.length > 0;
+    if (wantConfidence) {
+      const keys = items.map((w) => w.text.toLowerCase().trim());
+      const buckets = stabilityTracker.update(keys);
+      const leadingSpace = committedWordsIn(lastP) > 0 ? " " : "";
+      // Build textually-spaced word spans. The container span carries
+      // the v0.4.x .text-[var(--color-fg-subtle)] muted class as a
+      // baseline; per-word data-confidence layers an opacity multiplier
+      // on top so committed words still look fully bright after commit.
+      tail.classList.add("text-[var(--color-fg-subtle)]");
+      if (leadingSpace) tail.appendChild(document.createTextNode(leadingSpace));
+      for (let i = 0; i < items.length; i++) {
+        if (i > 0) tail.appendChild(document.createTextNode(" "));
+        const wordSpan = document.createElement("span");
+        wordSpan.className = "live-tail-word";
+        wordSpan.dataset.confidence = buckets[i];
+        wordSpan.textContent = items[i].text.trim();
+        tail.appendChild(wordSpan);
+      }
+    } else {
+      // Legacy text-only path — preserves v0.4.x rendering exactly.
+      tail.classList.add("text-[var(--color-fg-subtle)]");
+      tail.textContent = (committedWordsIn(lastP) > 0 ? " " : "") + text;
+    }
+
+    lastP.appendChild(tail);
     captionStream.scrollTop = captionStream.scrollHeight;
   }
 
@@ -1147,6 +1229,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
         flushLiveTailToCommitted();
         rolling.reset();
         agreement.reset();
+        stabilityTracker.reset();
         renderLiveLine("");
       }
       scheduleNextTick();
@@ -1195,7 +1278,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
           // transcriptSegments + sessionStore + share URLs.
           appendCommittedWords(agreement.newlyCommitted);
         }
-        renderLiveLine(agreement.liveLine);
+        renderLiveLine(agreement.liveLine, agreement.liveItems);
       }
 
       // Force-commit guard: if buffer has grown past the soft cap and we
@@ -1206,6 +1289,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
       if (audioWasOverCap) {
         flushLiveTailToCommitted();
         agreement.reset();
+        stabilityTracker.reset();
         // Trim everything EXCEPT the trailing FORCE_COMMIT_KEEP_SECONDS so
         // the next tick has context to transcribe instead of silence-starting.
         const keepSamples = FORCE_COMMIT_KEEP_SECONDS * TARGET_SAMPLE_RATE;
@@ -1241,6 +1325,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     whisperReady = false;
     rolling.reset();
     agreement.reset();
+    stabilityTracker.reset();
     nextTickMs = TICK_INTERVAL_MS;
     isPaused = false; // v0.4.1: fresh session always starts running
     pendingTurnBreak = false; // v0.4.3: turn detection starts disarmed
@@ -1404,6 +1489,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     whisperReady = false;
     rolling.reset();
     agreement.reset();
+    stabilityTracker.reset();
     nextTickMs = TICK_INTERVAL_MS;
     isPaused = false; // v0.4.1: fresh session always starts running
     pendingTurnBreak = false; // v0.4.3: turn detection starts disarmed
@@ -1505,6 +1591,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     pendingTurnBreak = false; // v0.4.3: turn detection cleared on stop
     rolling.reset();
     agreement.reset();
+    stabilityTracker.reset();
     renderLiveLine("");
     hideCaptionStatus();
     // If the user captured any words this session, surface the download
