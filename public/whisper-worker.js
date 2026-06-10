@@ -101,6 +101,22 @@ async function init(model = DEFAULT_MODEL) {
   currentModel = model;
   const progress_callback = buildProgressCallback();
 
+  // v0.4.3 — model-aware dtype selection.
+  // tiny/base/small: encoder fp32 + decoder q4 (proven config from the
+  //   reference realtime-whisper-webgpu demo — fast, high quality)
+  // large-v3-turbo:  encoder q4f16 + decoder q4f16 (~537 MB total).
+  //   fp32 encoder for large-v3-turbo would be 2.5 GB, which is too
+  //   much for browser memory + first-load patience. q4f16 keeps the
+  //   download manageable while preserving large-model quality lift.
+  const isLargeTurbo = /whisper-large/i.test(model);
+  const dtype = isLargeTurbo
+    ? { encoder_model: "q4f16", decoder_model_merged: "q4f16" }
+    : { encoder_model: "fp32", decoder_model_merged: "q4" };
+  // Larger models need more init time — bump timeout from 120s → 240s
+  // for the large tier. WebGPU model load includes weight transfer to
+  // GPU, which takes longer for 500MB+ payloads.
+  const initTimeout = isLargeTurbo ? 240_000 : 120_000;
+
   // Try WebGPU first — fastest path. Per-component dtype matches the
   // realtime-whisper-webgpu reference demo.
   try {
@@ -111,13 +127,10 @@ async function init(model = DEFAULT_MODEL) {
     asr = await withTimeout(
       pipeline("automatic-speech-recognition", model, {
         device: "webgpu",
-        dtype: {
-          encoder_model: "fp32",
-          decoder_model_merged: "q4",
-        },
+        dtype,
         progress_callback,
       }),
-      120_000,
+      initTimeout,
       "WebGPU model load (encoder/decoder weights from huggingface.co)",
     );
     self.postMessage({ type: "ready", model: currentModel, device: "webgpu" });
@@ -133,13 +146,15 @@ async function init(model = DEFAULT_MODEL) {
   }
 
   // WASM fallback — uses default q8 quantization, works everywhere.
+  // For large-v3-turbo, bump WASM timeout to 360s — large model on
+  // CPU WASM is slow to load (3-5 minutes on lower-end machines).
   try {
     asr = await withTimeout(
       pipeline("automatic-speech-recognition", model, {
         device: "wasm",
         progress_callback,
       }),
-      180_000,
+      isLargeTurbo ? 360_000 : 180_000,
       "WASM model load (slower than WebGPU)",
     );
     self.postMessage({ type: "ready", model: currentModel, device: "wasm" });

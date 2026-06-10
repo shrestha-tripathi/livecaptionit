@@ -35,7 +35,7 @@ export interface WhisperClient {
 
 export interface ModelSpec {
   /** Short key used in UI + localStorage. */
-  id: "tiny" | "base" | "small";
+  id: "tiny" | "base" | "small" | "large-turbo";
   /** User-facing label (capitalised). */
   label: string;
   /** Hugging Face model ID. ALL must be onnx-community/* so dtype variants
@@ -48,6 +48,8 @@ export interface ModelSpec {
   relSpeed: number;
   /** One-line UX hint. */
   hint: string;
+  /** v0.4.3: flag for the large tier so UI can show a size warning gate. */
+  large?: boolean;
 }
 
 export const AVAILABLE_MODELS: ModelSpec[] = [
@@ -74,6 +76,15 @@ export const AVAILABLE_MODELS: ModelSpec[] = [
     sizeMb: 244,
     relSpeed: 0.5,
     hint: "Best accuracy. Slower + bigger first-time download.",
+  },
+  {
+    id: "large-turbo",
+    label: "Large turbo",
+    hfId: "onnx-community/whisper-large-v3-turbo",
+    sizeMb: 537,
+    relSpeed: 0.35,
+    hint: "Top-tier accuracy. ½GB download — first load only, cached after.",
+    large: true,
   },
 ];
 

@@ -518,11 +518,24 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
       `;
       const radio = item.querySelector<HTMLInputElement>("input")!;
       radio.addEventListener("change", () => {
-        if (radio.checked) {
-          selectedModelId = m.id;
-          saveModelPref(m.id);
-          renderModelList(); // refresh selected highlight
+        if (!radio.checked) return;
+        // v0.4.3 — confirm the heavy download before committing to large tier.
+        // Only prompt if NOT already cached (in which case selecting it is free).
+        if (m.large && !isCached) {
+          const ok = window.confirm(
+            `Switch to ${m.label}?\n\nFirst-time download: ${m.sizeMb} MB. ` +
+            `Cached in your browser after that — subsequent sessions are instant.\n\n` +
+            `Recommended only if Base/Small aren't accurate enough on your audio.`,
+          );
+          if (!ok) {
+            // Revert the radio state — keep the previous selection highlighted.
+            renderModelList();
+            return;
+          }
         }
+        selectedModelId = m.id;
+        saveModelPref(m.id);
+        renderModelList(); // refresh selected highlight
       });
       modelList.appendChild(item);
     }
