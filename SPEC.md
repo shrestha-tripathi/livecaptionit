@@ -1,10 +1,10 @@
 # LiveCaptionIt — Spec
 
-**Status:** v0.1 → v0.3.2 SHIPPED + rebrand SHIPPED · **v0.4.0 IN PROGRESS** (sample demo + keyboard shortcuts + session replay)
-**Date:** 2026-06-08 (v0.1) · 2026-06-09 (v0.1.1 → v0.3.2) · 2026-06-10 (rebrand CaptionPip → LiveCaptionIt, v0.4.0)
+**Status:** v0.1 → v0.4.1 SHIPPED + rebrand SHIPPED
+**Date:** 2026-06-08 (v0.1) · 2026-06-09 (v0.1.1 → v0.3.2) · 2026-06-10 (rebrand CaptionPip → LiveCaptionIt, v0.4.0 → v0.4.1)
 **Domain:** `livecaptionit.com` (purchased 2026-06-10, DNS wire-up pending)
 **Repo:** `github.com/shrestha-tripathi/livecaptionit` (private until shipped)
-**Ship target:** v0.4.0 today
+**Ship target:** v0.4.1 SHIPPED 2026-06-10
 
 ## Changelog
 
@@ -19,6 +19,8 @@
 | **v0.3.0** | 2026-06-09 | **Translation mode** — Whisper auto-detect any language → English captions (zero new model download) | `69b0713` → `8395fd0` |
 | **v0.3.1** | 2026-06-09 | Bug fixes: stopped sub-state UI (Stop → Done, Start new btn) + music-hallucination filter (n-gram + `no_repeat_ngram_size: 3`) | `e1fb064` + `0e52ae1` |
 | **v0.3.2** | _in progress_ | **Translate mode removed** (quality wasn't good enough on real-world music + Hindi content); **PiP substate bug fixed** (header stayed STOPPED after Start new because `setSubstate` queried from rootEl which doesn't contain the caption-box while PiP is open) | _see below_ |
+| **v0.4.0** | 2026-06-09 | **Friction-removal trio:** bundled sample audio demo (zero-permission preview), keyboard shortcuts (Enter/Esc/P/R/D/?), 20-session IndexedDB history with viewer + .txt/.vtt/.srt re-download | `eea8fa7` → `2e3d343` |
+| **v0.4.1** | 2026-06-10 | **AudioWorklet migration** (replaces deprecated ScriptProcessorNode, audio thread = no main-thread jitter) + **Space pause/resume capture** (deferred from v0.4.0, new CaptureHandle.pause/resume API via AudioContext.suspend, dedicated PAUSED substate works inline + inside PiP) | `255588d` + `018b918` |
 
 ---
 
@@ -1473,3 +1475,161 @@ active sample session, never persisted as the user's preference.
 | 7 | docs(faq): privacy disclosure for session storage | ~30 |
 
 Total: ~1010 LOC, 7 commits.
+
+
+---
+
+# v0.4.1 — AudioWorklet migration + Space pause/resume (SHIPPED)
+
+**Status:** SHIPPED 2026-06-10 (3 commits)
+**Plan doc:** `docs/plans/2026-06-10-v0.4.1-bundle.md`
+**Predecessor:** v0.4.0 (commits `eea8fa7` → `2e3d343`, 2026-06-09)
+
+## 4.1.0 Why bundle these two
+
+Both features touched `wireAudioPipeline` in `src/lib/audioCapture.ts`,
+so shipping them as parallel commit trains would have produced a
+predictable merge conflict on every iteration. Bundling kept the edit
+coherent: AudioWorklet first publishes a `CaptureHandle.pause()/resume()`
+API that's a natural fit for `AudioContext.suspend/resume` semantics,
+then the pause/resume UI is wired in the second commit without a single
+overlapping line.
+
+## 4.1.1 Scope — AudioWorklet migration (commit `255588d`)
+
+Replaces deprecated `ScriptProcessorNode` with an AudioWorklet processor
+at `public/audio-worklet-capture.js`. Behaviour is byte-equivalent for
+downstream consumers — RollingBuffer, agreement.ts, and the Whisper
+worker are all blind to the migration.
+
+| Layer | Before | After |
+|---|---|---|
+| Node | `ctx.createScriptProcessor(4096, 1, 1)` | `new AudioWorkletNode(ctx, "capture-processor")` |
+| Thread | Main (jitters under load) | Audio thread (real-time priority) |
+| Frame size | 4096 samples per `onaudioprocess` | 4096-sample frames assembled by worklet from 128-sample blocks |
+| Frame rate | ~125-375 callbacks/sec (depends on rate) | ~4-11 transferred frames/sec |
+| Wireup | `wireAudioPipeline` was sync | Now `async` (`audioWorklet.addModule()`) |
+
+The worklet itself is intentionally minimal: accumulates 128-sample
+blocks into 4096-sample frames, posts each completed frame to the main
+thread with `transferList: [out.buffer]` (zero-copy), repeats. Manual
+16kHz downsample logic stays on the main thread message handler — the
+worklet operates at the AudioContext's native rate, exactly as the old
+ScriptProcessor did.
+
+Pause/resume API is published on `CaptureHandle` (and `SampleCaptureHandle`
+for parity) in this commit but **no callers exist yet** — the UI wires
+in the next commit. This split makes the migration commit
+independently revertable.
+
+### Critical decision: behaviour-equivalent migration vs. opportunistic refactor
+
+I considered moving the downsample into the worklet too (less main-thread
+work, cleaner separation). Rejected: it would have made the commit
+"chore + perf optimisation" instead of "chore only" — harder to debug
+if the migration introduced a regression. Kept the downsample location
+identical so any audio-quality change is provably NOT the worklet's
+fault.
+
+## 4.1.2 Scope — Space pause/resume (commit `018b918`)
+
+| Element | Spec |
+|---|---|
+| Keybind | `Space` |
+| Contexts where active | `active-live` + `active-paused` |
+| Pause action | `captureHandle.pause()` → `AudioContext.suspend()` (worklet stops emitting → RollingBuffer freezes). For sample mode also `audioEl.pause()` so user hears it stop. |
+| Resume action | `captureHandle.resume()` → `AudioContext.resume()`. Tick scheduler picks up naturally. |
+| UI affordance (paused) | New PAUSED indicator in caption-box header (static gray dot, no pulse). Replaces LIVE indicator. |
+| Status banner (paused) | `"Paused — press Space to resume"` (visible in main page + inside PiP) |
+| Status banner (resumed) | Flashes `"Listening…"` for 800ms then auto-hides |
+| Discoverability | New row in `?` help overlay: `Pause / resume capture · Space` |
+
+### Architectural moves in this commit
+
+1. **`setSubstate` now supports multi-value `data-when`.** Elements that
+   should stay visible in BOTH `live` and `paused` (Stop button, Pop out
+   button) use `data-when="live paused"`. The toggle logic splits on
+   whitespace and tests for inclusion. Single-value `data-when="live"`
+   /`"stopped"`/`"paused"` keeps working unchanged. This generalisation
+   was the smallest blast-radius alternative to duplicating UI elements.
+
+2. **`ShortcutContext` gains `"active-paused"`.** `Esc` and `P` shortcuts
+   extend their `contexts` arrays to include it so you can still
+   fully Stop or toggle PiP from a paused state. `R` and `D` stay
+   `active-stopped`-only (no meaningful behaviour while paused).
+
+3. **`tick()` early-returns when `isPaused`.** Still re-arms via
+   `scheduleNextTick()` so the moment `isPaused` flips back to false
+   the loop continues without a manual restart. No new GPU/CPU burn
+   while paused.
+
+4. **`togglePause()` is fully idempotent + state-gated.** No-op outside
+   `currentState === "active"`, no-op if there's no `captureHandle`,
+   no-op if substate is `"stopped"`. Defence in depth: even if a
+   keybind context check fails, the handler refuses to desync UI vs.
+   capture state.
+
+5. **`isPaused` reset in three places**: `startPipeline()`,
+   `startSampleSession()`, `stopPipeline()`. Without this, a paused
+   session that Stops + restarts could leak `isPaused = true` into
+   the new run — a "session starts paused with no visible cue" bug.
+
+### Edge cases handled
+
+| Case | Behaviour |
+|---|---|
+| `tick()` already in-flight when user pauses | Worker call completes after pause; its result still applies to pre-pause audio (semantically valid). `inFlight` guard already prevents overlap. No special handling. |
+| Pause while in PiP | Space inside the PiP doc fires because `setPipShortcuts(handle)` installs the same SHORTCUTS list on `pipWindow.document`. PAUSED indicator is visible because the caption-box header is the same DOM node moved into the PiP window. |
+| Stop while paused | `stopPipeline()` calls `captureHandle.stop()` which closes the AudioContext entirely; suspend state is moot. `isPaused` reset to false on the way out. |
+| User pauses, then closes PiP | `setPipMode(false)` doesn't touch `isPaused` — PiP is just a presentation layer. Paused state persists; PAUSED pill renders inline. |
+| Pause + long silence + resume | On resume, silence-guard fires next tick (silenceMs > 2.5s) and resets the rolling buffer + agreement. This is desired — pause is logically a session boundary. |
+| Browser `<button>` Space-as-click | The shortcut module calls `preventDefault()` on Space, so focused buttons don't double-fire. User has to click physically or hit Enter to activate a focused button. Documented inline. |
+
+## 4.1.3 Out of scope (still deferred)
+
+- Speaker diarization (defer to v0.4.2)
+- Real translate via NLLB (defer to v0.5)
+- Browser extension (defer to v0.5)
+- Search across stored sessions (defer to v0.4.3)
+- Session export-as-JSON / cross-browser import (defer to v0.4.3)
+- Pause hint UI as text-on-caption-box (defer until user feedback says discoverability is poor — currently `?` help dialog is the surface)
+
+## 4.1.4 Manual test checklist (run on Edge + Chrome + Firefox)
+
+### AudioWorklet
+- [ ] Tab capture → captions render normally (no behaviour change visible to user)
+- [ ] Mic capture → captions render normally
+- [ ] Sample audio → captions render normally
+- [ ] DevTools Performance: 30s capture → no main-thread audio-processing blocks ≥10ms
+- [ ] DevTools Network: `/audio-worklet-capture.js` served with `Content-Type: application/javascript` (or `text/javascript`)
+- [ ] No console warnings about deprecated `ScriptProcessorNode`
+
+### Space pause/resume
+- [ ] Active+live: Space → PAUSED indicator, status banner "Paused — press Space to resume", no new captions
+- [ ] Active+paused: Space → LIVE indicator returns, status banner "Listening…" briefly then auto-hides, captions resume
+- [ ] Sample mode: Space → audio playback actually stops, audible silence
+- [ ] PiP open: Space inside PiP doc → pause works, PAUSED pill visible in PiP
+- [ ] Paused → Esc → stopPipeline runs cleanly, substate → stopped
+- [ ] Paused → Stop button click → same as Esc
+- [ ] Paused → P → PiP toggle works
+- [ ] Paused → Start new (after Stop) → fresh session starts in live, not paused
+- [ ] Typing in any future input: Space doesn't hijack
+- [ ] `?` help overlay shows "Pause / resume capture · Space" row
+
+## 4.1.5 Success criteria (overall)
+
+- AudioWorklet: zero user-visible regression on any of the 3 capture paths
+- Space: pause-resume cycle works inline + inside PiP, no visual lies (UI substate always tracks capture state)
+- Brand-grep clean
+- 92/92 vitest pass (87 existing + 5 new for active-paused context)
+- `npm run build` + `npx astro check` clean (0 errors)
+
+## 4.1.6 Estimated vs. actual commits
+
+| # | Planned | Actual | LOC |
+|---|---|---|---|
+| 1 | `chore(capture): AudioWorklet migration` | `chore(capture): migrate ScriptProcessorNode -> AudioWorklet + add pause/resume API` | +397 / -17 |
+| 2 | `feat(capture): Space pause/resume` | `feat(ui): Space pause/resume capture (v0.4.1 final feature)` | +159 / -15 |
+| 3 | `docs(spec): v0.4.1 retrospective` | (this commit) | ~varies |
+
+Total: 3 commits, each independently revertable.
