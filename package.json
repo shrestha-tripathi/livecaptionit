@@ -23,6 +23,7 @@
   },
   "devDependencies": {
     "@types/node": "^25.9.2",
+    "fake-indexeddb": "^6.2.5",
     "vitest": "^4.1.8"
   }
 }
