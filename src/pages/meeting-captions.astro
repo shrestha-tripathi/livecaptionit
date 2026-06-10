@@ -1,0 +1,212 @@
+---
+import Layout from "../layouts/Layout.astro";
+import { site, b } from "../site.config";
+import { breadcrumb } from "../lib/breadcrumb";
+
+const howToLd = {
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  name: `How to add live captions to any video meeting with ${site.name}`,
+  description:
+    "Free live captions for Zoom, Google Meet, Microsoft Teams, Discord, Slack — anywhere a meeting runs in a browser tab. Captions float above the meeting window.",
+  totalTime: "PT30S",
+  step: [
+    {
+      "@type": "HowToStep",
+      position: 1,
+      name: "Join the meeting in a browser tab",
+      text: "Open the meeting in any Chrome / Edge / Brave tab — Zoom Web, Google Meet, Microsoft Teams Web, Discord browser, Slack browser.",
+    },
+    {
+      "@type": "HowToStep",
+      position: 2,
+      name: `Open ${site.name} in another tab`,
+      text: `Visit ${site.domain} in a second tab. Click "Start captions".`,
+    },
+    {
+      "@type": "HowToStep",
+      position: 3,
+      name: "Share the meeting tab + tick 'Share tab audio'",
+      text: "When the browser picker appears, select your meeting tab. Tick 'Share tab audio' — without it only video is shared, no audio.",
+    },
+    {
+      "@type": "HowToStep",
+      position: 4,
+      name: "Switch back to the meeting",
+      text: "A floating PiP caption window appears. Switch back to the meeting tab and join the call normally. Captions update in real time, visible no matter which app you switch to.",
+    },
+  ],
+};
+
+const faqLd = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: [
+    {
+      "@type": "Question",
+      name: "Why use this instead of Zoom or Meet's built-in captions?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: `<p>Zoom requires a paid plan for live captions on most account types. Google Meet limits captions to certain plans. Microsoft Teams ties captions to enterprise licenses. ${site.name} captions <em>any</em> tab audio for free, with no signup, on any plan. The captions also float in a Picture-in-Picture window above the meeting itself — useful if you want to read transcripts while screen-sharing something else.</p>`,
+      },
+    },
+    {
+      "@type": "Question",
+      name: "Do other meeting participants see my captions?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: `<p>No. Captions are rendered locally in your own browser — they only appear on your screen. ${site.name} doesn't inject anything into the meeting itself, doesn't show up as a participant, and doesn't notify anyone you're captioning. Useful for accessibility, language assistance, or recording prep without making it everyone else's concern.</p>`,
+      },
+    },
+    {
+      "@type": "Question",
+      name: "Can I caption a meeting where I'm the only speaker?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: `<p>Yes — use microphone mode instead of tab mode. ${site.name} captions your mic input, useful for dictation, voice notes, podcast prep, or meetings where you want a real-time transcript of your own speech.</p>`,
+      },
+    },
+    {
+      "@type": "Question",
+      name: "Will the meeting host know I'm using live captions?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: `<p>No. Live captioning runs entirely in your own browser tab — it shares the tab's audio with itself and renders the result on your screen. The meeting tool sees no different activity from a normal viewer. There is no plugin, no extension, no bot, and no API call. The meeting host cannot tell.</p>`,
+      },
+    },
+    {
+      "@type": "Question",
+      name: "Does it download a transcript after the meeting?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: `<p>Yes. When you click Stop, three download buttons appear — .txt, .vtt, .srt — and the last 20 sessions are auto-saved to browser IndexedDB for re-download from the home page. Audio is never saved, only text.</p>`,
+      },
+    },
+  ],
+};
+
+const bc = breadcrumb({ name: "Live captions for video meetings", path: "/meeting-captions" });
+---
+
+<Layout
+  title="Live captions for any video meeting — Zoom, Meet, Teams, free"
+  description={`Free live captions for Zoom, Google Meet, Microsoft Teams, Discord, Slack — any meeting tool that runs in a browser tab. Floating Picture-in-Picture window. Nothing uploads.`}
+  jsonLd={[howToLd, faqLd, bc]}
+>
+  <main class="max-w-3xl mx-auto px-4 sm:px-6 py-12 sm:py-16">
+    <p class="text-xs text-[var(--color-fg-subtle)] mb-3">
+      <a href={b("/")} class="hover:text-[var(--color-fg)]">{site.name}</a>
+      <span class="mx-1.5">/</span>
+      <span>Live captions for video meetings</span>
+    </p>
+
+    <h1 class="text-4xl sm:text-5xl font-bold tracking-tight mb-4">
+      Live captions for any video meeting.
+    </h1>
+    <p class="text-lg text-[var(--color-fg-muted)] mb-8">
+      Zoom, Google Meet, Microsoft Teams, Discord, Slack huddles — any meeting
+      that runs in a browser tab. Captions float in a Picture-in-Picture window
+      above the meeting itself, so you can switch apps and still read what's
+      being said. Free, no signup, nothing uploads.
+    </p>
+
+    <div class="mb-12">
+      <a
+        href={b("/")}
+        class="brand-halo inline-flex items-center gap-2 px-6 py-3 rounded-full text-base font-semibold bg-[var(--color-brand)] text-white hover:bg-[var(--color-brand-strong)] transition-colors shadow-line"
+      >
+        Start captioning →
+      </a>
+      <p class="mt-3 text-xs text-[var(--color-fg-subtle)]">
+        Free · no signup · audio processed locally
+      </p>
+    </div>
+
+    <section class="mb-12">
+      <h2 class="text-2xl font-bold mb-4">Works for any browser-based meeting</h2>
+      <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        {[
+          { name: "Zoom Web", note: "free + paid plans" },
+          { name: "Google Meet", note: "any plan" },
+          { name: "Microsoft Teams Web", note: "any plan" },
+          { name: "Discord (browser)", note: "voice + video" },
+          { name: "Slack huddles", note: "browser app" },
+          { name: "Whereby / Jitsi", note: "any meeting URL" },
+        ].map((p) => (
+          <div class="p-3 rounded-md bg-[var(--color-surface)] shadow-line">
+            <p class="font-semibold text-sm text-[var(--color-fg)]">{p.name}</p>
+            <p class="text-xs text-[var(--color-fg-subtle)] mt-0.5">{p.note}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+
+    <section class="mb-12">
+      <h2 class="text-2xl font-bold mb-4">Step-by-step</h2>
+      <ol class="space-y-4">
+        {howToLd.step.map((s, i) => (
+          <li class="flex gap-4">
+            <span class="shrink-0 size-7 grid place-items-center rounded-full bg-[var(--color-brand)] text-white font-bold text-sm">{i + 1}</span>
+            <div>
+              <p class="font-semibold text-[var(--color-fg)]">{s.name}</p>
+              <p class="mt-1 text-sm text-[var(--color-fg-muted)] leading-relaxed">{s.text}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </section>
+
+    <section class="mb-12">
+      <h2 class="text-2xl font-bold mb-4">Why this beats the built-in captions</h2>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div class="p-5 rounded-xl bg-[var(--color-surface)] shadow-line">
+          <p class="text-xs uppercase tracking-wider font-semibold text-[var(--color-fg-muted)] mb-2">Built-in captions</p>
+          <ul class="space-y-1.5 text-sm text-[var(--color-fg-muted)]">
+            <li>✗ Tied to your plan (Zoom Pro, Meet workspace, Teams enterprise)</li>
+            <li>✗ Locked inside the meeting window</li>
+            <li>✗ Disappear if you switch tabs</li>
+            <li>✗ Some tools mark you as "using captions" in analytics</li>
+          </ul>
+        </div>
+        <div class="p-5 rounded-xl bg-[var(--color-surface)] shadow-line border border-[var(--color-brand)]/30">
+          <p class="text-xs uppercase tracking-wider font-semibold text-[var(--color-brand-strong)] mb-2">{site.name}</p>
+          <ul class="space-y-1.5 text-sm text-[var(--color-fg-muted)]">
+            <li>✓ Free for any plan, any tool</li>
+            <li>✓ Floats over any app</li>
+            <li>✓ Persists across tab/window switches</li>
+            <li>✓ Invisible to the meeting tool — no one knows</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="mb-12">
+      <h2 class="text-2xl font-bold mb-4">Common questions</h2>
+      <div class="space-y-2">
+        {faqLd.mainEntity.map((q) => (
+          <details class="group bg-[var(--color-surface)] rounded-md px-4 py-3 shadow-line">
+            <summary class="cursor-pointer font-semibold text-[var(--color-fg)] flex items-center justify-between gap-3">
+              <span>{q.name}</span>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" class="group-open:rotate-180 transition-transform"><polyline points="6 9 12 15 18 9" /></svg>
+            </summary>
+            <div class="mt-2 text-sm text-[var(--color-fg-muted)] [&_p]:mt-2 [&_p:first-child]:mt-0" set:html={q.acceptedAnswer.text}></div>
+          </details>
+        ))}
+      </div>
+    </section>
+
+    <section class="mb-12 p-6 rounded-xl bg-[var(--color-surface)] shadow-line">
+      <h2 class="text-xl font-bold mb-2">Caption your next meeting</h2>
+      <p class="text-sm text-[var(--color-fg-muted)] mb-4">
+        Floating window stays on top while you take notes in another app.
+        Free forever. Nothing uploads.
+      </p>
+      <a
+        href={b("/")}
+        class="inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold bg-[var(--color-brand)] text-white hover:bg-[var(--color-brand-strong)] transition-colors shadow-line"
+      >
+        Open {site.name} →
+      </a>
+    </section>
+  </main>
+</Layout>

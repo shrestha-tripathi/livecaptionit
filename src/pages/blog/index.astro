@@ -1,0 +1,79 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import { getCollection } from "astro:content";
+import { site, b } from "../../site.config";
+import { breadcrumb } from "../../lib/breadcrumb";
+
+const posts = (await getCollection("blog", ({ data }) => !data.draft)).sort(
+  (a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf(),
+);
+
+const blogLd = {
+  "@context": "https://schema.org",
+  "@type": "Blog",
+  "@id": `${site.url}/blog#blog`,
+  url: `${site.url}/blog`,
+  name: `${site.shortName} Blog`,
+  description: `Long-form posts on live captioning, in-browser Whisper, accessibility, and privacy.`,
+  publisher: { "@id": `${site.url}/#organization` },
+  blogPost: posts.map((p) => ({
+    "@type": "BlogPosting",
+    headline: p.data.title,
+    description: p.data.description,
+    datePublished: p.data.pubDate.toISOString(),
+    url: `${site.url}/blog/${p.id}`,
+    author: { "@type": "Person", name: site.author },
+  })),
+};
+
+const bc = breadcrumb({ name: "Blog", path: "/blog" });
+
+const fmt = (d: Date) =>
+  d.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+---
+
+<Layout
+  title={`Blog — live captioning, Whisper, accessibility`}
+  description={`Long-form posts on in-browser live captioning, Whisper + WebGPU, accessibility, and the picture-in-picture pattern.`}
+  jsonLd={[blogLd, bc]}
+>
+  <main class="max-w-3xl mx-auto px-4 sm:px-6 py-12 sm:py-16">
+    <p class="text-xs text-[var(--color-fg-subtle)] mb-3">
+      <a href={b("/")} class="hover:text-[var(--color-fg)]">{site.name}</a>
+      <span class="mx-1.5">/</span>
+      <span>Blog</span>
+    </p>
+
+    <h1 class="text-4xl sm:text-5xl font-bold tracking-tight mb-3">Blog</h1>
+    <p class="text-lg text-[var(--color-fg-muted)] mb-10">
+      Notes on in-browser live captioning, Whisper + WebGPU performance, the
+      Document Picture-in-Picture pattern, and accessibility-first product
+      design.
+    </p>
+
+    <div class="space-y-4">
+      {posts.map((post) => (
+        <a
+          href={b(`/blog/${post.id}`)}
+          class="block p-5 rounded-xl bg-[var(--color-surface)] shadow-line hover:bg-[var(--color-surface-strong)] transition-colors"
+        >
+          <p class="text-[10px] uppercase tracking-wider text-[var(--color-fg-subtle)] font-semibold mb-2">
+            {fmt(post.data.pubDate)}
+            {post.data.tags.length > 0 && (
+              <>
+                <span class="mx-1.5">·</span>
+                {post.data.tags.join(" · ")}
+              </>
+            )}
+          </p>
+          <h2 class="text-lg font-bold text-[var(--color-fg)] tracking-tight">{post.data.title}</h2>
+          <p class="mt-2 text-sm text-[var(--color-fg-muted)]">{post.data.description}</p>
+        </a>
+      ))}
+    </div>
+
+    {posts.length === 0 && (
+      <p class="text-sm text-[var(--color-fg-subtle)]">No posts yet — check back soon.</p>
+    )}
+  </main>
+</Layout>

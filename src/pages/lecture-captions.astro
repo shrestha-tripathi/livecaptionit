@@ -1,0 +1,195 @@
+---
+import Layout from "../layouts/Layout.astro";
+import { site, b } from "../site.config";
+import { breadcrumb } from "../lib/breadcrumb";
+
+const howToLd = {
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  name: `How to caption a lecture or class with ${site.name}`,
+  description:
+    "Free live captions for online lectures, recorded courses, MOOCs, and webinars. Caption any audio your browser can hear; the floating window stays visible while you take notes.",
+  totalTime: "PT30S",
+  step: [
+    {
+      "@type": "HowToStep",
+      position: 1,
+      name: "Open the lecture / class in a browser tab",
+      text: "Coursera, edX, Udemy, Khan Academy, university LMS portals, YouTube lectures — anything that plays in Chrome.",
+    },
+    {
+      "@type": "HowToStep",
+      position: 2,
+      name: `Open ${site.name} in another tab`,
+      text: `Visit ${site.domain} and click "Start captions".`,
+    },
+    {
+      "@type": "HowToStep",
+      position: 3,
+      name: "Share the lecture tab + tick 'Share tab audio'",
+      text: "Pick the lecture tab in the browser picker. Tick 'Share tab audio'.",
+    },
+    {
+      "@type": "HowToStep",
+      position: 4,
+      name: "Read captions while taking notes",
+      text: "Open your note-taking app (Notion, Obsidian, Notes). The caption window floats above whatever app you switch to — read captions while typing notes in the same screen.",
+    },
+  ],
+};
+
+const faqLd = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: [
+    {
+      "@type": "Question",
+      name: "Can I download the transcript after the lecture ends?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: `<p>Yes. When you click Stop, three download buttons appear — .txt (plain text), .vtt (subtitle format), .srt (universal subtitle format). Use .txt for study notes, .srt or .vtt to re-upload as subtitles on a video. The last 20 transcripts are also auto-saved to your browser for re-download.</p>`,
+      },
+    },
+    {
+      "@type": "Question",
+      name: "Will captions work on recorded lectures with bad audio quality?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: `<p>Whisper is robust to background noise and accent, but very low-quality audio (compressed re-recordings, distant microphone, echo) reduces accuracy. The Small (244 MB) or Large turbo (537 MB) model tiers handle difficult audio significantly better than Base. The Custom Vocabulary panel also helps if the lecturer uses technical jargon or proper nouns.</p>`,
+      },
+    },
+    {
+      "@type": "Question",
+      name: "Can I caption a lecture in a non-English language?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: `<p>Yes — Whisper's multilingual mode supports 99 languages and ${site.name} uses it automatically. Captions appear in the source language. Useful for international students attending lectures in their second language and wanting to read along, or for native speakers studying in a foreign-language course.</p>`,
+      },
+    },
+    {
+      "@type": "Question",
+      name: "Does this work with Coursera, edX, or my university LMS?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: `<p>Yes — any video that plays in a Chrome tab can be captioned. Coursera, edX, Udemy, Khan Academy, university LMS portals (Canvas, Blackboard, Moodle), and YouTube all stream video+audio through standard browser playback. ${site.name} captures the tab audio and captions it in a floating window above your notes app.</p>`,
+      },
+    },
+    {
+      "@type": "Question",
+      name: "Is the floating window distracting?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: `<p>It's resizable and draggable. Make it small and tuck it in a corner; or make it edge-to-edge wide for a "subtitle bar" look. Caption Style preferences let you adjust font size, weight, position (top/middle/bottom), and you can switch between sepia / high-contrast / terminal themes. The window also supports opacity adjustment for a less-intrusive overlay.</p>`,
+      },
+    },
+  ],
+};
+
+const bc = breadcrumb({ name: "Live captions for lectures", path: "/lecture-captions" });
+---
+
+<Layout
+  title="Live captions for lectures, MOOCs, online classes — free"
+  description={`Live captions for online lectures and recorded courses — Coursera, edX, Udemy, Khan Academy, YouTube lectures, university LMS. Floats above your notes app. Free, no signup, nothing uploads.`}
+  jsonLd={[howToLd, faqLd, bc]}
+>
+  <main class="max-w-3xl mx-auto px-4 sm:px-6 py-12 sm:py-16">
+    <p class="text-xs text-[var(--color-fg-subtle)] mb-3">
+      <a href={b("/")} class="hover:text-[var(--color-fg)]">{site.name}</a>
+      <span class="mx-1.5">/</span>
+      <span>Live captions for lectures</span>
+    </p>
+
+    <h1 class="text-4xl sm:text-5xl font-bold tracking-tight mb-4">
+      Live captions for any lecture or class.
+    </h1>
+    <p class="text-lg text-[var(--color-fg-muted)] mb-8">
+      Coursera, edX, Udemy, Khan Academy, YouTube lectures, university LMS —
+      caption any lecture playing in your browser. The floating window stays
+      visible while you take notes. Transcripts downloadable as .txt / .vtt /
+      .srt. Free, no signup, audio never uploads.
+    </p>
+
+    <div class="mb-12">
+      <a
+        href={b("/")}
+        class="brand-halo inline-flex items-center gap-2 px-6 py-3 rounded-full text-base font-semibold bg-[var(--color-brand)] text-white hover:bg-[var(--color-brand-strong)] transition-colors shadow-line"
+      >
+        Start captioning →
+      </a>
+      <p class="mt-3 text-xs text-[var(--color-fg-subtle)]">
+        Free · no signup · audio processed locally · transcript exports
+      </p>
+    </div>
+
+    <section class="mb-12">
+      <h2 class="text-2xl font-bold mb-4">Why students use it</h2>
+      <ul class="space-y-3 text-[var(--color-fg-muted)]">
+        <li class="flex gap-3">
+          <span class="text-[var(--color-brand)] font-bold mt-0.5">▸</span>
+          <span><strong class="text-[var(--color-fg)] not-italic">Read while taking notes</strong> — caption window floats above Notion / Obsidian / Notes app. No more pausing the video, scrolling back, transcribing manually.</span>
+        </li>
+        <li class="flex gap-3">
+          <span class="text-[var(--color-brand)] font-bold mt-0.5">▸</span>
+          <span><strong class="text-[var(--color-fg)] not-italic">Download the transcript</strong> as .txt for study notes or .vtt/.srt to re-upload as subtitles.</span>
+        </li>
+        <li class="flex gap-3">
+          <span class="text-[var(--color-brand)] font-bold mt-0.5">▸</span>
+          <span><strong class="text-[var(--color-fg)] not-italic">99-language support</strong> — international courses in any language are captioned in the source language.</span>
+        </li>
+        <li class="flex gap-3">
+          <span class="text-[var(--color-brand)] font-bold mt-0.5">▸</span>
+          <span><strong class="text-[var(--color-fg)] not-italic">Accessibility</strong> — for hearing-impaired students or English-as-second-language learners, live captions remove a major barrier to MOOCs and remote courses.</span>
+        </li>
+        <li class="flex gap-3">
+          <span class="text-[var(--color-brand)] font-bold mt-0.5">▸</span>
+          <span><strong class="text-[var(--color-fg)] not-italic">Free + zero signup</strong> — no student license needed, no email, no monthly bill.</span>
+        </li>
+      </ul>
+    </section>
+
+    <section class="mb-12">
+      <h2 class="text-2xl font-bold mb-4">Step-by-step</h2>
+      <ol class="space-y-4">
+        {howToLd.step.map((s, i) => (
+          <li class="flex gap-4">
+            <span class="shrink-0 size-7 grid place-items-center rounded-full bg-[var(--color-brand)] text-white font-bold text-sm">{i + 1}</span>
+            <div>
+              <p class="font-semibold text-[var(--color-fg)]">{s.name}</p>
+              <p class="mt-1 text-sm text-[var(--color-fg-muted)] leading-relaxed">{s.text}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </section>
+
+    <section class="mb-12">
+      <h2 class="text-2xl font-bold mb-4">Common questions</h2>
+      <div class="space-y-2">
+        {faqLd.mainEntity.map((q) => (
+          <details class="group bg-[var(--color-surface)] rounded-md px-4 py-3 shadow-line">
+            <summary class="cursor-pointer font-semibold text-[var(--color-fg)] flex items-center justify-between gap-3">
+              <span>{q.name}</span>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" class="group-open:rotate-180 transition-transform"><polyline points="6 9 12 15 18 9" /></svg>
+            </summary>
+            <div class="mt-2 text-sm text-[var(--color-fg-muted)] [&_p]:mt-2 [&_p:first-child]:mt-0" set:html={q.acceptedAnswer.text}></div>
+          </details>
+        ))}
+      </div>
+    </section>
+
+    <section class="mb-12 p-6 rounded-xl bg-[var(--color-surface)] shadow-line">
+      <h2 class="text-xl font-bold mb-2">Caption your next lecture</h2>
+      <p class="text-sm text-[var(--color-fg-muted)] mb-4">
+        Floating window stays on top while you take notes. Audio stays on your
+        device. Transcript downloadable when done.
+      </p>
+      <a
+        href={b("/")}
+        class="inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold bg-[var(--color-brand)] text-white hover:bg-[var(--color-brand-strong)] transition-colors shadow-line"
+      >
+        Open {site.name} →
+      </a>
+    </section>
+  </main>
+</Layout>

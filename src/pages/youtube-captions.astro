@@ -1,0 +1,183 @@
+---
+import Layout from "../layouts/Layout.astro";
+import { site, b } from "../site.config";
+import { breadcrumb } from "../lib/breadcrumb";
+
+const howToLd = {
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  name: `How to caption a YouTube video with ${site.name}`,
+  description:
+    "Add live captions to any YouTube video — including foreign-language videos, live streams, or videos without auto-CC — using a free browser tool.",
+  totalTime: "PT30S",
+  step: [
+    {
+      "@type": "HowToStep",
+      position: 1,
+      name: "Open the YouTube video in one tab",
+      text: "Open the video you want to caption in any Chrome / Edge / Brave tab. Pause it for a second so the audio isn't already playing.",
+    },
+    {
+      "@type": "HowToStep",
+      position: 2,
+      name: `Open ${site.name} in another tab`,
+      text: `Visit ${site.domain} in a second tab. Click the "Start captions" button.`,
+    },
+    {
+      "@type": "HowToStep",
+      position: 3,
+      name: "Pick the YouTube tab + tick 'Share tab audio'",
+      text: "When the browser picker appears, select your YouTube tab. CRITICAL: tick the 'Share tab audio' checkbox at the bottom — without it, only video is shared, no audio.",
+    },
+    {
+      "@type": "HowToStep",
+      position: 4,
+      name: "Press play on YouTube",
+      text: "A floating Picture-in-Picture window appears with live captions. Switch back to the YouTube tab and press play. Captions update in real time.",
+    },
+  ],
+};
+
+const faqLd = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: [
+    {
+      "@type": "Question",
+      name: "Can I caption a YouTube video that has no subtitles?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: `<p>Yes. ${site.name} captions any audio Chrome can hear — including older YouTube videos where auto-CC was disabled, foreign-language videos with no English subs, or live streams that don't generate CC. Open the video, share the tab with audio, and live captions appear in a floating window.</p>`,
+      },
+    },
+    {
+      "@type": "Question",
+      name: "Why doesn't YouTube's own CC button work on this video?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: "<p>YouTube's auto-CC is generated server-side and only available for videos where the creator allowed it OR where YouTube's pipeline ran on it. Live streams, uploads under ~15 minutes, and many older videos don't have CC. Live captioning in your browser bypasses this — it transcribes whatever audio your tab is producing.</p>",
+      },
+    },
+    {
+      "@type": "Question",
+      name: "Can I translate a non-English YouTube video to English subtitles live?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: `<p>Not currently — ${site.name} ships transcription mode only (output language matches input). Translation mode was tested but disabled in v0.3.2 due to Whisper hallucinations on music-heavy translate. Real live translation is on the v0.5+ roadmap. For now, the captions stay in the source language.</p>`,
+      },
+    },
+    {
+      "@type": "Question",
+      name: "Does this work for YouTube live streams?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: "<p>Yes. Live streams broadcast audio through the tab just like a regular video — share the tab, tick 'Share tab audio', and captions update in real time. Useful for gaming streams, sports, or any live event where the streamer hasn't enabled auto-CC.</p>",
+      },
+    },
+  ],
+};
+
+const bc = breadcrumb({ name: "Caption a YouTube video", path: "/youtube-captions" });
+---
+
+<Layout
+  title="Live captions for any YouTube video — free, in browser"
+  description={`Add real-time captions to any YouTube video (live streams, foreign-language, no-CC videos). Free, in-browser, nothing uploads. Captions float in a Picture-in-Picture window above the video.`}
+  jsonLd={[howToLd, faqLd, bc]}
+>
+  <main class="max-w-3xl mx-auto px-4 sm:px-6 py-12 sm:py-16">
+    <p class="text-xs text-[var(--color-fg-subtle)] mb-3">
+      <a href={b("/")} class="hover:text-[var(--color-fg)]">{site.name}</a>
+      <span class="mx-1.5">/</span>
+      <span>Caption a YouTube video</span>
+    </p>
+
+    <h1 class="text-4xl sm:text-5xl font-bold tracking-tight mb-4">
+      Live captions for any YouTube video.
+    </h1>
+    <p class="text-lg text-[var(--color-fg-muted)] mb-8">
+      Foreign-language videos, live streams, old uploads without CC — anything
+      your browser can hear, captioned in real time. Captions float in a
+      Picture-in-Picture window above the video, so you don't miss a frame
+      while reading. Nothing uploads.
+    </p>
+
+    <div class="mb-12">
+      <a
+        href={b("/")}
+        class="brand-halo inline-flex items-center gap-2 px-6 py-3 rounded-full text-base font-semibold bg-[var(--color-brand)] text-white hover:bg-[var(--color-brand-strong)] transition-colors shadow-line"
+      >
+        Start captioning →
+      </a>
+      <p class="mt-3 text-xs text-[var(--color-fg-subtle)]">
+        Free · no signup · audio processed locally
+      </p>
+    </div>
+
+    <section class="mb-12">
+      <h2 class="text-2xl font-bold mb-4">When this beats YouTube's auto-CC</h2>
+      <ul class="space-y-3 text-[var(--color-fg-muted)]">
+        <li class="flex gap-3">
+          <span class="text-[var(--color-brand)] font-bold mt-0.5">▸</span>
+          <span><strong class="text-[var(--color-fg)] not-italic">Live streams</strong> — gaming, sports, breaking news. YouTube's CC pipeline lags behind real broadcast captions; live captions in your tab keep up.</span>
+        </li>
+        <li class="flex gap-3">
+          <span class="text-[var(--color-brand)] font-bold mt-0.5">▸</span>
+          <span><strong class="text-[var(--color-fg)] not-italic">Foreign-language videos</strong> — auto-CC requires the language to be one of YouTube's auto-detect list. Whisper supports 99 languages out of the box, much wider coverage than YouTube auto-CC.</span>
+        </li>
+        <li class="flex gap-3">
+          <span class="text-[var(--color-brand)] font-bold mt-0.5">▸</span>
+          <span><strong class="text-[var(--color-fg)] not-italic">Older uploads with no CC</strong> — YouTube's auto-CC didn't run on a lot of pre-2018 content. Live captions fill the gap.</span>
+        </li>
+        <li class="flex gap-3">
+          <span class="text-[var(--color-brand)] font-bold mt-0.5">▸</span>
+          <span><strong class="text-[var(--color-fg)] not-italic">Picture-in-Picture overlay</strong> — YouTube's CC sits inside the video player. {site.name}'s floats over <em>any</em> app — keep watching the video on the big screen while reading captions in a pinned window.</span>
+        </li>
+      </ul>
+    </section>
+
+    <section class="mb-12">
+      <h2 class="text-2xl font-bold mb-4">Step-by-step</h2>
+      <ol class="space-y-4">
+        {howToLd.step.map((s, i) => (
+          <li class="flex gap-4">
+            <span class="shrink-0 size-7 grid place-items-center rounded-full bg-[var(--color-brand)] text-white font-bold text-sm">{i + 1}</span>
+            <div>
+              <p class="font-semibold text-[var(--color-fg)]">{s.name}</p>
+              <p class="mt-1 text-sm text-[var(--color-fg-muted)] leading-relaxed">{s.text}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </section>
+
+    <section class="mb-12">
+      <h2 class="text-2xl font-bold mb-4">Common questions</h2>
+      <div class="space-y-2">
+        {faqLd.mainEntity.map((q) => (
+          <details class="group bg-[var(--color-surface)] rounded-md px-4 py-3 shadow-line">
+            <summary class="cursor-pointer font-semibold text-[var(--color-fg)] flex items-center justify-between gap-3">
+              <span>{q.name}</span>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" class="group-open:rotate-180 transition-transform"><polyline points="6 9 12 15 18 9" /></svg>
+            </summary>
+            <div class="mt-2 text-sm text-[var(--color-fg-muted)] [&_p]:mt-2 [&_p:first-child]:mt-0" set:html={q.acceptedAnswer.text}></div>
+          </details>
+        ))}
+      </div>
+    </section>
+
+    <section class="mb-12 p-6 rounded-xl bg-[var(--color-surface)] shadow-line">
+      <h2 class="text-xl font-bold mb-2">Ready to caption that video?</h2>
+      <p class="text-sm text-[var(--color-fg-muted)] mb-4">
+        Opens in a floating window that stays on top of any app. Audio processed
+        locally on your device. Never uploads.
+      </p>
+      <a
+        href={b("/")}
+        class="inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold bg-[var(--color-brand)] text-white hover:bg-[var(--color-brand-strong)] transition-colors shadow-line"
+      >
+        Open {site.name} →
+      </a>
+    </section>
+  </main>
+</Layout>
