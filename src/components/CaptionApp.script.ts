@@ -89,7 +89,7 @@ import {
 } from "../lib/whisperClient";
 import { openPip, isPipSupported, type PipHandle } from "../lib/pipClient";
 import { detectSupport, isMobileDevice } from "../lib/browserSupport";
-import { Agreement } from "../lib/agreement";
+import { StringAgreement } from "../lib/agreement";
 import { looksHallucinated } from "../lib/hallucination";
 import {
   formatTxt,
@@ -383,7 +383,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
 
   // Rolling-window state
   const rolling = createRollingBuffer();
-  const agreement = new Agreement();
+  const agreement = new StringAgreement();
   let tickTimer: number | null = null;
   let inFlight = false;
   let nextTickMs = TICK_INTERVAL_MS;
