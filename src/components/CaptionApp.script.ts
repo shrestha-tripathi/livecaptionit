@@ -54,6 +54,7 @@ import {
   type SessionSource,
 } from "../lib/sessionStore";
 import { searchSessions, debounce } from "../lib/sessionSearch";
+import { toast } from "../lib/toast";
 import {
   createWhisperClient,
   AVAILABLE_MODELS,
@@ -1175,7 +1176,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
    */
   async function togglePip() {
     if (!isPipSupported()) {
-      alert("Pop-out window needs Chrome, Edge, or Brave 116+.");
+      toast.error("Pop-out window needs Chrome, Edge, or Brave 116+.");
       return;
     }
     if (pipHandle) {
@@ -1198,7 +1199,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
       setPipMode(true);
     } catch (e) {
       console.error("[LiveCaptionIt] PiP open failed:", e);
-      alert((e as Error).message);
+      toast.error((e as Error).message);
     }
   }
 
@@ -1567,7 +1568,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
       try {
         const bundle = await exportAllSessions();
         if (bundle.sessions.length === 0) {
-          alert("No sessions to export yet — record at least one session first.");
+          toast.info("No sessions to export yet — record at least one session first.");
           return;
         }
         const yyyymmdd = new Date().toISOString().slice(0, 10);
@@ -1579,7 +1580,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
         );
       } catch (err) {
         console.warn("[LiveCaptionIt] export failed:", err);
-        alert(
+        toast.error(
           `Couldn't export sessions: ${err instanceof Error ? err.message : String(err)}`,
         );
       }
@@ -1612,10 +1613,10 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
         const parts = [`${result.imported} imported`];
         if (result.skipped > 0) parts.push(`${result.skipped} skipped (already present)`);
         if (result.pruned > 0) parts.push(`${result.pruned} pruned (over 20-session cap)`);
-        alert(`Import complete: ${parts.join(", ")}.`);
+        toast.success(`Import complete: ${parts.join(", ")}.`);
       } catch (err) {
         console.warn("[LiveCaptionIt] import failed:", err);
-        alert(
+        toast.error(
           `Couldn't import sessions: ${err instanceof Error ? err.message : String(err)}`,
         );
       }
