@@ -248,6 +248,21 @@
           />
         </label>
 
+        {/* v0.4.3: caption theme picker */}
+        <div class="flex items-center justify-between gap-2 text-xs px-2 py-1">
+          <label for="cp-style-theme" class="text-[var(--color-fg-muted)]">Caption theme</label>
+          <select
+            id="cp-style-theme"
+            class="text-xs px-2 py-1 rounded-md bg-[var(--color-surface-strong)] text-[var(--color-fg)] border-0 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[var(--color-brand)]"
+            title="Color preset for the caption box (independent of light/dark page theme)"
+          >
+            <option value="default">Default · matches page</option>
+            <option value="sepia">Sepia · easy on eyes</option>
+            <option value="hi-contrast">High contrast · max legibility</option>
+            <option value="terminal">Terminal · navy + cyan</option>
+          </select>
+        </div>
+
         <div class="flex items-center justify-between gap-2 pt-1">
           <p class="text-[10px] text-[var(--color-fg-subtle)] leading-snug">
             Live-applies. Saved to your browser only.

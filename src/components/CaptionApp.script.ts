@@ -125,12 +125,32 @@ interface CaptionStyle {
   position: "top" | "middle" | "bottom";
   /** Whether to apply text-shadow (boosts legibility over bright video). */
   textShadow: boolean;
+  /** v0.4.3: caption color preset. Independent of the page's light/dark theme. */
+  theme: CaptionTheme;
 }
+
+/**
+ * Caption color themes (v0.4.3). Each theme defines a backdrop + text
+ * colour pair applied via CSS custom properties on the caption box.
+ *  - default    → transparent in PiP, neutral surface inline (legacy)
+ *  - sepia      → warm cream backdrop, dark brown text
+ *  - hi-contrast → pure black backdrop, pure white text
+ *  - terminal   → deep navy backdrop, cyan text
+ */
+export type CaptionTheme = "default" | "sepia" | "hi-contrast" | "terminal";
+const CAPTION_THEMES: ReadonlyArray<CaptionTheme> = [
+  "default",
+  "sepia",
+  "hi-contrast",
+  "terminal",
+];
+
 const CAPTION_STYLE_DEFAULTS: CaptionStyle = {
   fontScale: 1,
   fontWeight: 400,
   position: "top",
   textShadow: true,
+  theme: "default",
 };
 function loadCaptionStyle(): CaptionStyle {
   try {
@@ -143,11 +163,16 @@ function loadCaptionStyle(): CaptionStyle {
     const position = parsed.position === "middle" || parsed.position === "bottom"
       ? parsed.position
       : "top";
+    const theme: CaptionTheme =
+      CAPTION_THEMES.includes(parsed.theme as CaptionTheme)
+        ? (parsed.theme as CaptionTheme)
+        : "default";
     return {
       fontScale: clamp(Number(parsed.fontScale) || CAPTION_STYLE_DEFAULTS.fontScale, 0.8, 2.0),
       fontWeight,
       position,
       textShadow: parsed.textShadow !== false, // default true
+      theme,
     };
   } catch {
     return { ...CAPTION_STYLE_DEFAULTS };
@@ -270,6 +295,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
   const styleFontScale = rootEl.querySelector<HTMLInputElement>("#cp-style-fontscale")!;
   const styleFontScaleVal = rootEl.querySelector<HTMLSpanElement>("#cp-style-fontscale-val")!;
   const styleShadow = rootEl.querySelector<HTMLInputElement>("#cp-style-shadow")!;
+  const styleTheme = rootEl.querySelector<HTMLSelectElement>("#cp-style-theme")!;
   const styleResetBtn = rootEl.querySelector<HTMLButtonElement>("#cp-style-reset")!;
   const downloadBar = rootEl.querySelector<HTMLDivElement>("#cp-download-bar")!;
   const dlTxtBtn = rootEl.querySelector<HTMLButtonElement>("#cp-dl-txt")!;
@@ -487,11 +513,17 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
       "caption-position-bottom",
     );
     captionStream.classList.add(`caption-position-${s.position}`);
+    // v0.4.3: theme — swap the data attribute so CSS selectors target
+    // the right preset. Themes are defined in global.css under the
+    // `[data-caption-theme="..."]` blocks so they cascade into PiP too
+    // (pipClient.ts copies the global stylesheet on open).
+    captionBox.dataset.captionTheme = s.theme;
   }
   function renderStyleUI() {
     styleFontScale.value = String(Math.round(captionStyle.fontScale * 100));
     styleFontScaleVal.textContent = `${Math.round(captionStyle.fontScale * 100)}%`;
     styleShadow.checked = captionStyle.textShadow;
+    styleTheme.value = captionStyle.theme;
     // Reset radio checked state to match current captionStyle
     rootEl
       .querySelectorAll<HTMLInputElement>('input[name="cp-style-fontweight"]')
@@ -541,6 +573,15 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     captionStyle.textShadow = styleShadow.checked;
     applyCaptionStyle(captionStyle);
     saveCaptionStyle(captionStyle);
+  });
+  // v0.4.3: theme picker
+  styleTheme.addEventListener("change", () => {
+    const v = styleTheme.value as CaptionTheme;
+    if (CAPTION_THEMES.includes(v)) {
+      captionStyle.theme = v;
+      applyCaptionStyle(captionStyle);
+      saveCaptionStyle(captionStyle);
+    }
   });
   styleResetBtn.addEventListener("click", () => {
     captionStyle = { ...CAPTION_STYLE_DEFAULTS };

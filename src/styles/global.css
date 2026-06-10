@@ -221,3 +221,85 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .cp-toast { animation: none !important; }
 }
+
+/* ── Caption themes (v0.4.3) ──────────────────────────────────────────
+   Each theme defines tokens that the caption box reads. Themes apply
+   inline (idle / pre-PiP state) AND inside the Document PiP window
+   (which copies stylesheets but adds its own !important overrides via
+   pipClient.ts — themes selectors need !important to win).
+
+   `default` is the legacy behavior: surface backdrop inline, theme-aware
+   in PiP. Other themes pin specific colors regardless of light/dark.
+*/
+
+/* Default theme = no overrides, inline + PiP behave exactly as before.
+   We DON'T paint anything here so the existing layout is byte-stable. */
+
+/* Sepia — warm cream + dark brown. Easy on eyes for long reading. */
+.cp-caption-box[data-caption-theme="sepia"],
+body.pip-window .cp-caption-box[data-caption-theme="sepia"] {
+  background: #f5ecd7 !important;
+  color: #3b2f1c !important;
+}
+.cp-caption-box[data-caption-theme="sepia"] #cp-caption-stream,
+body.pip-window .cp-caption-box[data-caption-theme="sepia"] #cp-caption-stream,
+.cp-caption-box[data-caption-theme="sepia"] #cp-caption-stream p,
+body.pip-window .cp-caption-box[data-caption-theme="sepia"] #cp-caption-stream p,
+.cp-caption-box[data-caption-theme="sepia"] #cp-caption-stream strong,
+body.pip-window .cp-caption-box[data-caption-theme="sepia"] #cp-caption-stream strong {
+  color: #3b2f1c !important;
+}
+.cp-caption-box[data-caption-theme="sepia"] #cp-caption-stream span.live-tail,
+body.pip-window .cp-caption-box[data-caption-theme="sepia"] #cp-caption-stream span.live-tail {
+  color: #8a7654 !important;
+}
+body.pip-window .cp-caption-box[data-caption-theme="sepia"] > header {
+  background: #ebe0c2 !important;
+  border-bottom-color: #d4c69a !important;
+}
+
+/* High-contrast — pure black backdrop, pure white text. Max legibility. */
+.cp-caption-box[data-caption-theme="hi-contrast"],
+body.pip-window .cp-caption-box[data-caption-theme="hi-contrast"] {
+  background: #000000 !important;
+  color: #ffffff !important;
+}
+.cp-caption-box[data-caption-theme="hi-contrast"] #cp-caption-stream,
+body.pip-window .cp-caption-box[data-caption-theme="hi-contrast"] #cp-caption-stream,
+.cp-caption-box[data-caption-theme="hi-contrast"] #cp-caption-stream p,
+body.pip-window .cp-caption-box[data-caption-theme="hi-contrast"] #cp-caption-stream p,
+.cp-caption-box[data-caption-theme="hi-contrast"] #cp-caption-stream strong,
+body.pip-window .cp-caption-box[data-caption-theme="hi-contrast"] #cp-caption-stream strong {
+  color: #ffffff !important;
+}
+.cp-caption-box[data-caption-theme="hi-contrast"] #cp-caption-stream span.live-tail,
+body.pip-window .cp-caption-box[data-caption-theme="hi-contrast"] #cp-caption-stream span.live-tail {
+  color: #b8b8b8 !important;
+}
+body.pip-window .cp-caption-box[data-caption-theme="hi-contrast"] > header {
+  background: #1a1a1a !important;
+  border-bottom-color: #333 !important;
+}
+
+/* Terminal — deep navy backdrop, cyan text. Retro CRT vibe. */
+.cp-caption-box[data-caption-theme="terminal"],
+body.pip-window .cp-caption-box[data-caption-theme="terminal"] {
+  background: #0a1929 !important;
+  color: #5eead4 !important;
+}
+.cp-caption-box[data-caption-theme="terminal"] #cp-caption-stream,
+body.pip-window .cp-caption-box[data-caption-theme="terminal"] #cp-caption-stream,
+.cp-caption-box[data-caption-theme="terminal"] #cp-caption-stream p,
+body.pip-window .cp-caption-box[data-caption-theme="terminal"] #cp-caption-stream p,
+.cp-caption-box[data-caption-theme="terminal"] #cp-caption-stream strong,
+body.pip-window .cp-caption-box[data-caption-theme="terminal"] #cp-caption-stream strong {
+  color: #5eead4 !important;
+}
+.cp-caption-box[data-caption-theme="terminal"] #cp-caption-stream span.live-tail,
+body.pip-window .cp-caption-box[data-caption-theme="terminal"] #cp-caption-stream span.live-tail {
+  color: #2dd4bf99 !important; /* alpha-muted cyan */
+}
+body.pip-window .cp-caption-box[data-caption-theme="terminal"] > header {
+  background: #0f2138 !important;
+  border-bottom-color: #1e3a5f !important;
+}
