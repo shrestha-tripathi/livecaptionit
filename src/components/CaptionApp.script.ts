@@ -88,7 +88,7 @@ import {
   type ModelSpec,
 } from "../lib/whisperClient";
 import { openPip, isPipSupported, type PipHandle } from "../lib/pipClient";
-import { detectSupport } from "../lib/browserSupport";
+import { detectSupport, isMobileDevice } from "../lib/browserSupport";
 import { Agreement } from "../lib/agreement";
 import { looksHallucinated } from "../lib/hallucination";
 import {
@@ -409,6 +409,12 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
 
   // ── Initial support detection ──
   const support = detectSupport();
+  const isMobile = isMobileDevice();
+  // Mark the document root for CSS-driven mobile tweaks (bigger tap targets,
+  // hiding PiP-irrelevant UI). One class — global.css owns the visual rules.
+  if (isMobile) {
+    document.documentElement.classList.add("is-mobile");
+  }
   // Hoist currentSource before support check so we can force-set it to "mic"
   // when display capture isn't available. Restored to saved pref below if
   // support is fine.
@@ -416,8 +422,12 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
   if (!support.displayMediaAudio) {
     // No tab-audio capture, but mic mode still works via getUserMedia.
     // Force mic source + show explainer instead of disabling Start entirely.
-    supportWarn.textContent =
-      "Your browser doesn't support tab/screen audio capture. Microphone-only mode is still available — pick 'Microphone' above.";
+    // On mobile we use a SOFTER message because tab/screen capture isn't a
+    // browser bug — it's a platform limitation; users shouldn't feel like
+    // their device is broken.
+    supportWarn.textContent = isMobile
+      ? "On mobile, captioning works with your microphone — point it at any audio source (speaker, headphones, another device)."
+      : "Your browser doesn't support tab/screen audio capture. Microphone-only mode is still available — pick 'Microphone' above.";
     supportWarn.classList.remove("hidden");
     // Force the Tab radio off + Mic radio on (and disable the tab radio).
     sourceRadios.forEach((r) => {
@@ -1747,8 +1757,13 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
   // Initial paint so any localStorage-persisted overrides show up in the UI
   // (in case the user opens the dialog later — we already applied them).
   renderShortcutButtons();
-  // Always install on the main document.
-  installShortcuts(document, SHORTCUTS, getShortcutContext);
+  // Always install on the main document — UNLESS we're on mobile, where
+  // there's no physical keyboard to fire any of these. Skipping the install
+  // avoids a wasted listener and keeps the help dialog (`?`) unreachable
+  // (which is correct — it has no purpose on touch devices).
+  if (!isMobile) {
+    installShortcuts(document, SHORTCUTS, getShortcutContext);
+  }
   /** Currently-installed PiP shortcut uninstaller. Resetting it lets us
    *  cleanly swap when PiP closes + reopens during one page session. */
   let pipShortcutsUninstall: (() => void) | null = null;

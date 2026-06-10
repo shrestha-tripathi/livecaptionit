@@ -49,3 +49,32 @@ export async function hasWorkingWebGPU(): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * Best-effort mobile/tablet detection. Used by CaptionApp.script.ts to:
+ *  - Default the source toggle to "mic" (mobile has no getDisplayMedia for audio)
+ *  - Hide PiP-related UI (Document PiP is desktop-only in 2026)
+ *  - Hide keyboard-shortcut affordances (no physical keyboard)
+ *
+ * Strategy: combine UA sniff (covers iOS/iPadOS/Android) + coarse pointer +
+ * narrow viewport. ANY match wins because there is no single reliable signal.
+ * Conservative: only `true` when at least one strong indicator is present
+ * AND the viewport is genuinely small or pointer is coarse — otherwise a
+ * desktop user resizing their browser would incorrectly flip into mobile UX.
+ */
+export function isMobileDevice(): boolean {
+  if (typeof window === "undefined") return false;
+  const ua = (navigator.userAgent || "").toLowerCase();
+  const uaIsMobile =
+    /android|iphone|ipad|ipod|opera mini|iemobile|mobile safari/.test(ua) ||
+    // iPadOS 13+ identifies as Mac — disambiguate via touch points
+    (/macintosh/.test(ua) && (navigator.maxTouchPoints ?? 0) > 1);
+  const coarsePointer =
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(pointer: coarse)").matches;
+  const narrowViewport = (window.innerWidth || 0) < 768;
+  // Require UA hit OR (coarse + narrow). Both safeguards prevent false-positives
+  // on desktop touchscreens (Surface laptops report coarse pointer when in
+  // tablet mode, but their viewport is rarely < 768).
+  return uaIsMobile || (coarsePointer && narrowViewport);
+}
