@@ -86,6 +86,13 @@ const MAX_TICK_MS = 2000; // hard cap on adaptive tick interval
 const FORCE_COMMIT_KEEP_SECONDS = 2; // keep this much trailing audio after force-commit
 const SILENCE_RMS_THRESHOLD = 0.005; // below this = treated as silence (skip transcription)
 const SILENCE_RESET_SECONDS = 2.5; // sustained silence longer than this → wipe buffer + agreement (kills Whisper hallucinations)
+/** v0.4.3: gap-based turn detection. Silence longer than this triggers
+ *  a fresh paragraph on the NEXT committed batch — visually marks where
+ *  a conversation likely pivoted (someone finished speaking, another
+ *  voice took over). Calibrated SHORTER than SILENCE_RESET_SECONDS so
+ *  most natural conversational pauses produce paragraph breaks BEFORE
+ *  the buffer-reset guard fires. */
+const TURN_GAP_SECONDS = 1.5;
 const HALLUCINATION_MAX_REPEAT = 4; // kept in sync with DEFAULT_REPEAT_THRESHOLD in lib/hallucination.ts — bump both together if the threshold needs tuning
 const INLINE_PREF_KEY = "livecaptionit:inline-pref";
 const PIP_PREFS_KEY = "livecaptionit:pip-prefs";
@@ -348,6 +355,10 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
   // We keep a sliding window of recent RMS values to know "how long has it
   // been quiet?" so we can prevent Whisper from hallucinating on silent audio.
   let lastNonSilentMs = 0;
+  /** v0.4.3: when audio crosses the TURN_GAP_SECONDS threshold of silence,
+   *  the NEXT appendCommittedWords() call starts a fresh paragraph.
+   *  Reset to false the moment we honour it (one-shot). */
+  let pendingTurnBreak = false;
   // Transcript recording — every committed batch gets pushed here with its
   // timestamp relative to sessionStartMs. Cleared on Start/Reset, used by
   // the download buttons that appear in the active panel after Stop.
@@ -638,6 +649,30 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
    *  attribute but reading it on every keydown adds overhead. */
   let currentState: AppState = "idle";
 
+  /** v0.4.3: shared onLevel handler — updates lastNonSilentMs and sets
+   *  pendingTurnBreak when crossing the silence → speech transition
+   *  AFTER >= TURN_GAP_SECONDS of silence. Used by both startCapture
+   *  (tab/display) and startMicCapture wirings. */
+  function handleLevel(rms: number) {
+    if (rms > SILENCE_RMS_THRESHOLD) {
+      const now = performance.now();
+      const silentMs = now - lastNonSilentMs;
+      // Only set the flag if (a) we already have committed words (no
+      // point breaking before anything was said) and (b) silence
+      // exceeded TURN_GAP_SECONDS but stayed under SILENCE_RESET_SECONDS
+      // (the buffer-reset already handles the longer-silence case by
+      // flushing the live tail).
+      if (
+        captionCount > 0 &&
+        silentMs > TURN_GAP_SECONDS * 1000 &&
+        silentMs < SILENCE_RESET_SECONDS * 1000
+      ) {
+        pendingTurnBreak = true;
+      }
+      lastNonSilentMs = now;
+    }
+  }
+
   /** Active-panel substate: "live" while captioning, "paused" while
    *  user has hit Space (v0.4.1), "stopped" after Stop when transcript
    *  has content (so user can still see history + download).
@@ -725,6 +760,15 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     // can append plain text to its end (then re-add the live tail in
     // renderLiveLine()).
     if (lastP) stripLiveTail(lastP);
+
+    // v0.4.3: gap-based turn detection — if the silence-to-speech
+    // transition flagged a turn break, force a fresh <p> so the new
+    // committed batch lands in a NEW paragraph instead of appending
+    // to the previous one. One-shot: cleared the moment we honour it.
+    if (pendingTurnBreak && lastP && committedWordsIn(lastP) > 0) {
+      lastP = null; // signal the loop below to allocate a fresh <p>
+    }
+    pendingTurnBreak = false;
 
     for (const word of words) {
       // Count only the bold (committed) words for line-break math
@@ -933,6 +977,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     agreement.reset();
     nextTickMs = TICK_INTERVAL_MS;
     isPaused = false; // v0.4.1: fresh session always starts running
+    pendingTurnBreak = false; // v0.4.3: turn detection starts disarmed
     // New session — fresh transcript log.
     transcriptSegments = [];
     sessionStartMs = performance.now();
@@ -1015,7 +1060,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
           // RMS callback fires ~10Hz from audioCapture. Record the last
           // time the input was above the silence floor so tick() can
           // decide whether to skip transcription / reset state.
-          if (rms > SILENCE_RMS_THRESHOLD) lastNonSilentMs = performance.now();
+          handleLevel(rms);
         },
         onError: (err) => showError(err.message),
         onSourceEnded: () => {
@@ -1079,6 +1124,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     agreement.reset();
     nextTickMs = TICK_INTERVAL_MS;
     isPaused = false; // v0.4.1: fresh session always starts running
+    pendingTurnBreak = false; // v0.4.3: turn detection starts disarmed
     transcriptSegments = [];
     sessionStartMs = performance.now();
     currentSessionSource = "sample";
@@ -1117,7 +1163,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
       captureHandle = await startSampleCapture(sampleAudioEl, "/sample.mp3", {
         onAudio: (samples) => rolling.append(samples),
         onLevel: (rms) => {
-          if (rms > SILENCE_RMS_THRESHOLD) lastNonSilentMs = performance.now();
+          handleLevel(rms);
         },
         onError: (err) => showError(err.message),
         onSourceEnded: () => {
@@ -1171,6 +1217,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     whisperReady = false;
     inFlight = false;
     isPaused = false; // v0.4.1: stopping clears paused state
+    pendingTurnBreak = false; // v0.4.3: turn detection cleared on stop
     rolling.reset();
     agreement.reset();
     renderLiveLine("");
