@@ -19,5 +19,25 @@ import { site } from "../site.config";
         Questions, bugs, or feature requests? <a href="/contact" class="underline">Get in touch</a>.
       </p>
     </div>
+
+    <h2 class="mt-12 text-2xl font-bold tracking-tight text-[var(--color-fg)]">Honest limitations</h2>
+    <div class="mt-4 space-y-4 text-[var(--color-fg-muted)] text-[15px] leading-relaxed">
+      <p>
+        <strong class="text-[var(--color-fg)]">No speaker identity.</strong>
+        {site.name} doesn't say "Speaker A vs Speaker B" — and not because we're lazy. When you capture a tab, every speaker (your colleague in Zoom, the host on a podcast, both interviewers) reaches the browser as a single mono audio stream at similar volume. Telling them apart needs a separate voice-fingerprinting model (~300MB) that we haven't shipped yet. We may split paragraphs on long pauses in a future release — that's the honest version of "diarization" we can deliver from one channel.
+      </p>
+      <p>
+        <strong class="text-[var(--color-fg)]">Accuracy isn't perfect.</strong>
+        Whisper's <code class="text-xs px-1 py-0.5 rounded bg-[var(--color-surface)]">base</code> model is fast and works offline, but it'll mishear technical jargon, proper nouns, and heavily accented speech. The model picker lets you try <code class="text-xs px-1 py-0.5 rounded bg-[var(--color-surface)]">small</code> (244MB) for better accuracy at the cost of a slower first load.
+      </p>
+      <p>
+        <strong class="text-[var(--color-fg)]">~1-second delay.</strong>
+        Real-time speech recognition needs to wait for enough audio context to make a stable guess. The first word usually shows within ~1 second of speech; words refine in place as Whisper hears more.
+      </p>
+      <p>
+        <strong class="text-[var(--color-fg)]">Music and silence aren't speech.</strong>
+        Whisper hallucinates plausible-sounding captions on near-silent or musical audio. {site.name} drops repeating filler-token chains and resets the buffer after 2.5s of silence, but expect some weirdness if you point it at a song with sparse vocals.
+      </p>
+    </div>
   </main>
 </Layout>
