@@ -1,10 +1,10 @@
 # LiveCaptionIt — Spec
 
-**Status:** v0.1 → v0.4.1 SHIPPED + rebrand SHIPPED
-**Date:** 2026-06-08 (v0.1) · 2026-06-09 (v0.1.1 → v0.3.2) · 2026-06-10 (rebrand CaptionPip → LiveCaptionIt, v0.4.0 → v0.4.1)
-**Domain:** `livecaptionit.com` (purchased 2026-06-10, DNS wire-up pending)
+**Status:** v0.1 → v0.4.2 SHIPPED + rebrand SHIPPED
+**Date:** 2026-06-08 (v0.1) · 2026-06-09 (v0.1.1 → v0.3.2) · 2026-06-10 (rebrand CaptionPip → LiveCaptionIt, v0.4.0 → v0.4.2)
+**Domain:** `livecaptionit.com` (LIVE, CF Pages wired 2026-06-10)
 **Repo:** `github.com/shrestha-tripathi/livecaptionit` (private until shipped)
-**Ship target:** v0.4.1 SHIPPED 2026-06-10
+**Ship target:** v0.4.2 SHIPPED 2026-06-10
 
 ## Changelog
 
@@ -21,6 +21,7 @@
 | **v0.3.2** | _in progress_ | **Translate mode removed** (quality wasn't good enough on real-world music + Hindi content); **PiP substate bug fixed** (header stayed STOPPED after Start new because `setSubstate` queried from rootEl which doesn't contain the caption-box while PiP is open) | _see below_ |
 | **v0.4.0** | 2026-06-09 | **Friction-removal trio:** bundled sample audio demo (zero-permission preview), keyboard shortcuts (Enter/Esc/P/R/D/?), 20-session IndexedDB history with viewer + .txt/.vtt/.srt re-download | `eea8fa7` → `2e3d343` |
 | **v0.4.1** | 2026-06-10 | **AudioWorklet migration** (replaces deprecated ScriptProcessorNode, audio thread = no main-thread jitter) + **Space pause/resume capture** (deferred from v0.4.0, new CaptureHandle.pause/resume API via AudioContext.suspend, dedicated PAUSED substate works inline + inside PiP) | `255588d` + `018b918` |
+| **v0.4.2** | 2026-06-10 | **Session search** (debounced filter over cached transcripts on idle screen, AND-match multi-term, hidden when <3 sessions) + **JSON export/import** (v1 versioned bundle, skip-on-duplicate-id merge, MAX_SESSIONS-aware pruning, Import reachable on empty store for cross-device restore) | `496fd91` + `abebab0` |
 
 ---
 
@@ -1631,5 +1632,226 @@ fault.
 | 1 | `chore(capture): AudioWorklet migration` | `chore(capture): migrate ScriptProcessorNode -> AudioWorklet + add pause/resume API` | +397 / -17 |
 | 2 | `feat(capture): Space pause/resume` | `feat(ui): Space pause/resume capture (v0.4.1 final feature)` | +159 / -15 |
 | 3 | `docs(spec): v0.4.1 retrospective` | (this commit) | ~varies |
+
+Total: 3 commits, each independently revertable.
+
+
+---
+
+# v0.4.2 — Session Search + JSON Export/Import (SHIPPED)
+
+**Status:** SHIPPED 2026-06-10 (3 commits)
+**Plan doc:** `docs/plans/2026-06-10-v0.4.2-bundle.md`
+**Predecessor:** v0.4.1 (commits `255588d` → `d9e8f35`, 2026-06-10)
+
+## 4.2.0 Scope decisions
+
+Original menu had 4 candidates (speaker diarization, search, export/import,
+medium/large model tier). Dropped 2:
+
+- **Diarization** — true speaker ID needs a voice-embedding model
+  (pyannote / SpeakerNet, 200-400MB + 4-6h WebGPU port work). Energy
+  heuristics on mono audio distinguish "loud vs quiet" not "speaker A
+  vs B" — every speaker in a Zoom / Meet / YouTube stream arrives
+  through the SAME channel at similar RMS. Gap-based "turn detection"
+  was a possible cheap proxy (paragraph break on ≥1.5s silence) but
+  the user opted to skip and keep v0.4.2 lean.
+- **Medium/large Whisper model tier** — `onnx-community/whisper-large-v3-turbo`
+  at q4f16 is actually viable (~564MB encoder + decoder) but adding a
+  7.5× base-size model needs its OWN focused release: scary-size
+  warning UI, better download-progress affordances, "this is a
+  power-user upgrade" framing. Bundling into v0.4.2 would have buried
+  that UX moment. Punted to a dedicated v0.5 model story.
+
+What shipped: **2 features + 1 docs commit = 3 commits.**
+
+## 4.2.1 Scope — Session search (commit `496fd91`)
+
+New module `src/lib/sessionSearch.ts` (pure functions, no DOM/IDB):
+
+```ts
+sessionHaystack(s: StoredSession): string  // lowercased combined search string
+searchSessions(sessions, query): StoredSession[]  // AND-match filter
+debounce(fn, wait): (...args) => void
+```
+
+**Match rules:**
+- Empty/whitespace query → return input unchanged
+- Query lowercased + split on whitespace into terms
+- Session matches iff EVERY term appears as substring in the haystack
+- Haystack = preview + joined transcript words + source label
+  ("tab"/"mic"/"sample" + a few synonyms) + ISO date + modelId
+- Result preserves input order (caller already sorted)
+
+**Why AND not OR:** matches Google's default behaviour for unquoted
+multi-word queries — "standup tuesday" should return only sessions
+containing BOTH terms, not anything matching either word.
+
+**UX gates:**
+- Search input HIDDEN when `cachedSessions.length < 3` (search adds
+  friction on fresh installs; 1-2 sessions are scannable by eye).
+- Empty-state `"No sessions match — try another search."` shown when
+  query matches nothing. Panel + header + Clear all stay visible so
+  user knows where they are.
+- Debounce 150ms — re-filters at most ~6×/sec during typing. Filter
+  itself is pure + cached so even without debounce it'd be cheap; this
+  is just visual-flicker polish.
+- On `clearAll()` or last-session delete, currentQuery and input value
+  reset so a future panel re-open starts clean.
+
+**Caching:** `applySearchFilter()` reads from a module-level
+`cachedSessions` array refreshed only by `renderHistory()` (which hits
+IDB). Keystrokes never touch IDB — pure-functional Array.filter is
+sub-millisecond at our N ≤ 20.
+
+## 4.2.2 Scope — JSON export/import (commit `abebab0`)
+
+`sessionStore.ts` gains:
+
+```ts
+EXPORT_VERSION = 1 as const   // schema version
+
+interface ExportBundle {
+  version: 1
+  exportedAt: string   // ISO timestamp
+  appVersion: string   // informational
+  sessions: StoredSession[]
+}
+
+interface ImportResult {
+  imported: number
+  skipped: number     // duplicate id
+  pruned: number      // evicted by MAX_SESSIONS after insert
+}
+
+exportAllSessions(idb?, appVersion?) → Promise<ExportBundle>
+validateExportBundle(input) → asserts ExportBundle | throws Error
+importSessions(bundle, idb?) → Promise<ImportResult>
+```
+
+**Schema versioning contract:** `validateExportBundle` rejects any
+`version !== EXPORT_VERSION` with a clear user-facing error. When
+StoredSession shape changes in a future version, bump EXPORT_VERSION
+and add an `if (bundle.version === N)` migration branch — never
+silently break.
+
+**Import semantics:**
+- Skip-on-duplicate-id (non-destructive merge). Existing sessions are
+  NEVER overwritten by import — user always retains live data.
+- Each session goes through `saveSession()` individually (NOT a single
+  bulk transaction). Reasons: skip-on-dup is cleaner per-row, partial
+  failure leaves successful imports intact, N ≤ 20 so the tx-overhead
+  concern is negligible.
+- Per-insert prune-on-cap runs naturally — if importing 10 sessions
+  brings total over MAX_SESSIONS (20), oldest by `startedAt` get
+  evicted. `importSessions` snapshots `preCount` + `postCount` to
+  report accurate `pruned` count back to caller.
+
+**Validation:** zero-dep runtime checks. We do NOT use a schema library
+(zod / valibot) — the validation surface is small enough that hand-
+written checks stay readable and ship faster than the lib + types they'd
+pull in.
+
+**File format:** pretty-printed JSON (2-space indent) so users CAN
+manually inspect / hand-edit if needed. ~5-10KB per session at typical
+length — a 20-session bundle is well under 200KB even with verbose
+transcripts.
+
+**Filename:** `livecaptionit-history-YYYY-MM-DD.json` — sortable so
+users with multiple backups see them in date order.
+
+## 4.2.3 UI fix — Import is reachable on empty store
+
+**Pre-v0.4.2:** if you had 0 sessions, the entire Recent sessions panel
+was hidden. That meant Import was unreachable on a fresh device — the
+exact moment you'd most need it for restoring a backup.
+
+**v0.4.2:** panel stays visible when empty, but strips down to header
++ Import button + `"No sessions recorded yet — record one or Import a
+backup."` hint. Export / Clear all / Search input all hidden when empty.
+
+Two separate empty-state nodes (`#cp-history-empty` vs
+`#cp-history-empty-zero`) so messaging stays accurate — "no match"
+vs "no sessions" are different conditions.
+
+## 4.2.4 Test infra
+
+15 new vitest cases for `sessionSearch.test.ts`:
+- haystack: case-folding, ISO date inclusion, source labels, modelId inclusion
+- search: empty query → all, single-term, case-insensitive, multi-term AND,
+  multi-match, no-match, source/model filters, order preservation
+- debounce: trailing-fire on rapid calls, separate fire when spaced
+
+10 new vitest cases for `sessionStore.test.ts` (export/import):
+- exportAllSessions: empty-store shape, full roundtrip preservation
+- importSessions: skip-on-duplicate-id, 20-cap pruning with accurate count
+- validateExportBundle: valid input, null/string/number rejection,
+  unknown version, missing sessions array, missing required fields,
+  invalid source enum
+
+Total: **92 → 117 vitest cases.**
+
+## 4.2.5 Out of scope (still deferred)
+
+- Speaker diarization (defer to v0.5 — needs voice embedding model)
+- Gap-based "turn detection" paragraph breaks (potential v0.4.3 if
+  user feedback says wall-of-text is a pain point)
+- Medium/large Whisper model tier (defer to dedicated v0.5 model story
+  with proper scary-size UX)
+- Real translate via NLLB (defer to v0.5)
+- Browser extension companion (defer to v0.5)
+- Pause hint UI as inline text (defer until user feedback says `?`
+  help overlay is insufficient)
+- Replace native `alert()` for import result + errors with a proper
+  toast component (polish work, not blocking)
+
+## 4.2.6 Manual test checklist
+
+### Session search
+- [ ] With 0 sessions: search input hidden, panel shows "No sessions recorded yet" + Import button only
+- [ ] With 1-2 sessions: list shows, search input HIDDEN (threshold)
+- [ ] With ≥3 sessions: search input visible
+- [ ] Type a word in 1+ session preview → only matching shown
+- [ ] Type "Q3 plan" with 2 sessions matching → both shown
+- [ ] Type "xyzzyfoobar" → "No sessions match" empty-state
+- [ ] Clear input → all sessions return
+- [ ] Type fast → re-filter is debounced (no flicker on every keystroke)
+- [ ] Clear all → search input resets visibility + value
+
+### JSON export
+- [ ] With ≥1 sessions: Export button visible, click → JSON downloads as `livecaptionit-history-YYYY-MM-DD.json`
+- [ ] Open JSON → see `version: 1`, `exportedAt`, `appVersion`, `sessions: [...]`
+- [ ] Each session has id / startedAt / endedAt / source / modelId / transcript / preview
+
+### JSON import
+- [ ] With 0 sessions: Import button visible (KEY restore-on-fresh-device case)
+- [ ] Click Import → file picker opens, accepts only .json
+- [ ] Pick a valid bundle → "Import complete: N imported" alert, list re-renders
+- [ ] Pick same bundle again → "N skipped (already present)"
+- [ ] Pick bundle with 10 sessions when store already has 15 → "10 imported, 5 pruned (over 20-session cap)"
+- [ ] Pick a non-JSON file → "File isn't valid JSON"
+- [ ] Pick a JSON file with `version: 99` → "Unsupported export version: 99"
+- [ ] Pick a JSON missing required fields → "missing required fields" error
+- [ ] After error, list state unchanged (no partial corruption)
+- [ ] Pick same file twice in a row → second pick still fires (input.value reset)
+
+## 4.2.7 Success criteria (overall)
+
+- Search across 20 sessions returns matching subset in <16ms (sub-frame)
+- Export/import roundtrip preserves all StoredSession fields verbatim
+- Import never overwrites existing sessions (data safety)
+- v1 schema lock — future schema changes can be migrated without
+  silently breaking older exports
+- 117/117 vitest pass (92 baseline + 15 search + 10 export/import)
+- Brand-grep clean
+- `npm run build` + `npx astro check` clean (0 errors)
+
+## 4.2.8 Estimated vs actual commits
+
+| # | Planned | Actual | Files +/- |
+|---|---|---|---|
+| 1 | `feat(history): session search` | `feat(history): search across stored sessions (v0.4.2 part 1)` | +454/-3 |
+| 2 | `feat(history): JSON export/import` | `feat(history): JSON export/import for sessions (v0.4.2 part 2)` | +482/-6 |
+| 3 | `docs(spec): v0.4.2 retrospective` | (this commit) | ~varies |
 
 Total: 3 commits, each independently revertable.
