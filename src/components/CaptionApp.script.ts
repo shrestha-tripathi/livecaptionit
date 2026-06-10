@@ -42,6 +42,15 @@ import {
   type ShortcutContext,
 } from "../lib/shortcuts";
 import {
+  saveSession,
+  listSessions,
+  getSession,
+  deleteSession,
+  clearAll as clearAllSessions,
+  type StoredSession,
+  type SessionSource,
+} from "../lib/sessionStore";
+import {
   createWhisperClient,
   AVAILABLE_MODELS,
   DEFAULT_MODEL_ID,
@@ -256,6 +265,17 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
   const dlTxtBtn = rootEl.querySelector<HTMLButtonElement>("#cp-dl-txt")!;
   // Shortcuts dialog lives at the section root, not inside .cp-active panel.
   const shortcutsHelpDialog = rootEl.querySelector<HTMLDialogElement>("#cp-shortcuts-help")!;
+  // v0.4.0 — session history UI refs
+  const historyPanel = rootEl.querySelector<HTMLDivElement>("#cp-history-panel")!;
+  const historyList = rootEl.querySelector<HTMLUListElement>("#cp-history-list")!;
+  const historyClearBtn = rootEl.querySelector<HTMLButtonElement>("#cp-history-clear")!;
+  const sessionViewDialog = rootEl.querySelector<HTMLDialogElement>("#cp-session-view")!;
+  const sessionViewMeta = rootEl.querySelector<HTMLSpanElement>("#cp-session-view-meta")!;
+  const sessionViewBody = rootEl.querySelector<HTMLDivElement>("#cp-session-view-body")!;
+  const sessionViewDlTxt = rootEl.querySelector<HTMLButtonElement>("#cp-session-view-dl-txt")!;
+  const sessionViewDlVtt = rootEl.querySelector<HTMLButtonElement>("#cp-session-view-dl-vtt")!;
+  const sessionViewDlSrt = rootEl.querySelector<HTMLButtonElement>("#cp-session-view-dl-srt")!;
+  const sessionViewDelete = rootEl.querySelector<HTMLButtonElement>("#cp-session-view-delete")!;
   const dlVttBtn = rootEl.querySelector<HTMLButtonElement>("#cp-dl-vtt")!;
   const dlSrtBtn = rootEl.querySelector<HTMLButtonElement>("#cp-dl-srt")!;
   const dlClearBtn = rootEl.querySelector<HTMLButtonElement>("#cp-dl-clear")!;
@@ -284,6 +304,10 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
   // the download buttons that appear in the active panel after Stop.
   let transcriptSegments: TranscriptSegment[] = [];
   let sessionStartMs = 0;
+  /** v0.4.0: source-of-truth for THIS session's source — "tab" | "mic" | "sample".
+   *  Different from currentSource (which is the user's persistent preference)
+   *  because the sample button can override mid-flight. Recorded into IndexedDB. */
+  let currentSessionSource: SessionSource = "tab";
 
   // ── Initial support detection ──
   const support = detectSupport();
@@ -837,6 +861,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     // New session — fresh transcript log.
     transcriptSegments = [];
     sessionStartMs = performance.now();
+    currentSessionSource = currentSource === "mic" ? "mic" : "tab";
     downloadBar.classList.add("hidden");
     // Treat the moment Start was clicked as "fresh audio incoming" so the
     // silence-reset guard doesn't fire on the first tick before any RMS
@@ -980,6 +1005,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     nextTickMs = TICK_INTERVAL_MS;
     transcriptSegments = [];
     sessionStartMs = performance.now();
+    currentSessionSource = "sample";
     downloadBar.classList.add("hidden");
     lastNonSilentMs = performance.now();
     captionStream.innerHTML = "";
@@ -1082,6 +1108,30 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
       // but flip substate so the header (LIVE → STOPPED, Stop → Done,
       // Pop Out hidden, Start new shown) reflects that capture ended.
       setSubstate("stopped");
+      // v0.4.0: persist this session to IndexedDB history (best-effort —
+      // never crash the UI on storage failure; just log). Minimum 5 words
+      // total to avoid cluttering history with accidental clicks or
+      // 1-word silence-hallucinations.
+      const totalWords = transcriptSegments.reduce(
+        (sum, s) => sum + s.words.length,
+        0,
+      );
+      if (totalWords >= 5) {
+        const endedAt = Date.now();
+        const startedAt = endedAt - (performance.now() - sessionStartMs);
+        const modelId = loadModelPref();
+        void saveSession({
+          startedAt,
+          endedAt,
+          source: currentSessionSource,
+          modelId,
+          transcript: [...transcriptSegments],
+        })
+          .then(() => renderHistory())
+          .catch((err) => {
+            console.warn("[LiveCaptionIt] sessionStore.saveSession failed:", err);
+          });
+      }
     } else {
       // Nothing captured (e.g. they cancelled the picker) — back to idle
       setState("idle");
@@ -1243,6 +1293,137 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     downloadBar.classList.add("hidden");
     setState("idle");
   });
+
+  // ── v0.4.0: session history (Recent sessions list on idle screen) ──
+  /** Currently-viewed session id, set by `viewSession()` so download/delete
+   *  buttons in the dialog know what to act on. */
+  let viewingSessionId: string | null = null;
+
+  /** Format epoch ms as a friendly relative time ("2 min ago", "3 hours ago",
+   *  "yesterday"). Defaults to date for >7 days ago. Pure-ish (uses Date.now). */
+  function relativeTime(t: number): string {
+    const diffSec = Math.max(0, Math.round((Date.now() - t) / 1000));
+    if (diffSec < 60) return "just now";
+    if (diffSec < 3600) return `${Math.round(diffSec / 60)} min ago`;
+    if (diffSec < 86400) return `${Math.round(diffSec / 3600)} hr ago`;
+    if (diffSec < 7 * 86400) return `${Math.round(diffSec / 86400)} days ago`;
+    return new Date(t).toLocaleDateString();
+  }
+
+  /** Label a SessionSource enum for the list view. */
+  function sourceLabelFor(s: SessionSource): string {
+    if (s === "mic") return "Mic";
+    if (s === "sample") return "Sample";
+    return "Tab";
+  }
+
+  /** Fetch sessions + repopulate the Recent panel. Idempotent. */
+  async function renderHistory() {
+    let sessions: StoredSession[];
+    try {
+      sessions = await listSessions();
+    } catch (err) {
+      console.warn("[LiveCaptionIt] sessionStore.listSessions failed:", err);
+      historyPanel.classList.add("hidden");
+      return;
+    }
+    if (sessions.length === 0) {
+      historyPanel.classList.add("hidden");
+      historyList.innerHTML = "";
+      return;
+    }
+    historyPanel.classList.remove("hidden");
+    // Render top 5 in the list (compact panel) — user can clear to see fewer.
+    const shown = sessions.slice(0, 5);
+    historyList.innerHTML = shown
+      .map((s) => {
+        const meta = `${relativeTime(s.startedAt)} · ${sourceLabelFor(s.source)}`;
+        // Defensive HTML escape — preview is user-generated transcript text.
+        const safePreview = (s.preview || "(empty)")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+        return `<li class="px-4 py-2.5 text-xs hover:bg-[var(--color-surface-strong)] transition-colors">
+          <button type="button" data-session-id="${s.id}" class="cp-history-item w-full text-left flex flex-col gap-0.5">
+            <span class="text-[var(--color-fg-muted)]">${meta}</span>
+            <span class="text-[var(--color-fg)] line-clamp-2 italic">${safePreview}</span>
+          </button>
+        </li>`;
+      })
+      .join("");
+    // Wire each item button (event delegation would also work — list is short)
+    historyList.querySelectorAll<HTMLButtonElement>(".cp-history-item").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const id = btn.dataset.sessionId;
+        if (id) void viewSession(id);
+      });
+    });
+  }
+
+  /** Open the viewer dialog with the given session id. */
+  async function viewSession(id: string) {
+    let s: StoredSession | undefined;
+    try {
+      s = await getSession(id);
+    } catch (err) {
+      console.warn("[LiveCaptionIt] sessionStore.getSession failed:", err);
+      return;
+    }
+    if (!s) return;
+    viewingSessionId = id;
+    const startDate = new Date(s.startedAt);
+    const durSec = Math.max(1, Math.round((s.endedAt - s.startedAt) / 1000));
+    sessionViewMeta.textContent = `${startDate.toLocaleString()} · ${sourceLabelFor(s.source)} · ${durSec}s · model: ${s.modelId}`;
+    sessionViewBody.textContent = formatTxt(s.transcript) || "(empty session)";
+    sessionViewDialog.showModal();
+  }
+
+  /** Active-on-click: read viewingSessionId, refetch, then download in given format. */
+  function downloadCurrentSession(
+    fmt: "txt" | "vtt" | "srt",
+  ): void {
+    if (!viewingSessionId) return;
+    void getSession(viewingSessionId)
+      .then((s) => {
+        if (!s) return;
+        const stamp = new Date(s.startedAt)
+          .toISOString()
+          .replace(/[T:.]/g, "-")
+          .slice(0, 19);
+        const name = `livecaptionit-${stamp}.${fmt}`;
+        const fn = fmt === "txt" ? formatTxt : fmt === "vtt" ? formatVtt : formatSrt;
+        const mime =
+          fmt === "txt"
+            ? "text/plain;charset=utf-8"
+            : fmt === "vtt"
+              ? "text/vtt;charset=utf-8"
+              : "application/x-subrip;charset=utf-8";
+        downloadString(name, fn(s.transcript), mime);
+      })
+      .catch((err) => console.warn("[LiveCaptionIt] download failed:", err));
+  }
+
+  sessionViewDlTxt.addEventListener("click", () => downloadCurrentSession("txt"));
+  sessionViewDlVtt.addEventListener("click", () => downloadCurrentSession("vtt"));
+  sessionViewDlSrt.addEventListener("click", () => downloadCurrentSession("srt"));
+  sessionViewDelete.addEventListener("click", () => {
+    if (!viewingSessionId) return;
+    void deleteSession(viewingSessionId)
+      .then(() => {
+        viewingSessionId = null;
+        sessionViewDialog.close();
+        void renderHistory();
+      })
+      .catch((err) => console.warn("[LiveCaptionIt] delete failed:", err));
+  });
+  historyClearBtn.addEventListener("click", () => {
+    if (!confirm("Clear all session history? This can't be undone.")) return;
+    void clearAllSessions()
+      .then(() => renderHistory())
+      .catch((err) => console.warn("[LiveCaptionIt] clearAll failed:", err));
+  });
+  // Initial render on page load
+  void renderHistory();
 
   // Ensure clean shutdown if user closes the tab while capturing
   window.addEventListener("pagehide", () => {

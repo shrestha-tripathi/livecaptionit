@@ -61,6 +61,27 @@
     {/* Hidden audio element used by sampleFeed to play sample through speakers */}
     <audio id="cp-sample-audio" preload="none" aria-hidden="true" class="hidden"></audio>
 
+    {/* ── Recent sessions (v0.4.0 — populated by script.ts on mount) ── */}
+    <div
+      id="cp-history-panel"
+      class="hidden mt-6 max-w-md mx-auto text-left rounded-lg bg-[var(--color-surface)] shadow-line"
+    >
+      <header class="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-[var(--color-fg-muted)] flex items-center justify-between border-b border-[var(--color-border)]">
+        <span class="inline-flex items-center gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l3 2"/></svg>
+          Recent sessions
+        </span>
+        <button
+          id="cp-history-clear"
+          type="button"
+          class="text-[10px] font-normal normal-case tracking-normal text-[var(--color-fg-subtle)] hover:text-[var(--color-fg-muted)] transition-colors"
+        >Clear all</button>
+      </header>
+      <ul id="cp-history-list" class="divide-y divide-[var(--color-border)]">
+        {/* Filled dynamically by CaptionApp.script.ts */}
+      </ul>
+    </div>
+
     <div class="mt-4 flex justify-center">
       <label
         id="cp-inline-toggle-wrap"
@@ -454,6 +475,39 @@
       </div>
       <footer class="px-5 py-3 border-t border-[var(--color-border)] text-[11px] text-[var(--color-fg-subtle)] flex justify-between items-center">
         <span>Shortcuts disabled while typing</span>
+        <button type="submit" class="px-3 py-1 rounded-md bg-[var(--color-brand)] text-white text-xs font-medium hover:bg-[var(--color-brand-strong)] transition-colors">Close</button>
+      </footer>
+    </form>
+  </dialog>
+
+  {/* ── Session viewer (v0.4.0) ── */}
+  <dialog
+    id="cp-session-view"
+    class="rounded-xl shadow-line bg-[var(--color-surface)] text-[var(--color-fg)] p-0 max-w-2xl w-[92vw] backdrop:bg-black/40"
+  >
+    <form method="dialog" class="contents">
+      <header class="flex items-center justify-between px-5 py-4 border-b border-[var(--color-border)]">
+        <h3 class="text-base font-semibold tracking-tight">Past session</h3>
+        <button
+          type="submit"
+          class="text-sm text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] transition-colors"
+          aria-label="Close"
+        >✕</button>
+      </header>
+      <div class="px-5 py-3 text-[11px] text-[var(--color-fg-subtle)] flex items-center gap-3 border-b border-[var(--color-border)]">
+        <span id="cp-session-view-meta">—</span>
+      </div>
+      <div
+        id="cp-session-view-body"
+        class="px-5 py-4 text-sm leading-relaxed max-h-[60vh] overflow-y-auto whitespace-pre-wrap"
+      ></div>
+      <footer class="px-5 py-3 border-t border-[var(--color-border)] flex flex-wrap items-center justify-between gap-2">
+        <div class="flex flex-wrap gap-1.5">
+          <button id="cp-session-view-dl-txt" type="button" class="px-3 py-1 rounded-md bg-[var(--color-surface-strong)] text-xs font-medium hover:bg-[var(--color-brand)] hover:text-white transition-colors">.txt</button>
+          <button id="cp-session-view-dl-vtt" type="button" class="px-3 py-1 rounded-md bg-[var(--color-surface-strong)] text-xs font-medium hover:bg-[var(--color-brand)] hover:text-white transition-colors">.vtt</button>
+          <button id="cp-session-view-dl-srt" type="button" class="px-3 py-1 rounded-md bg-[var(--color-surface-strong)] text-xs font-medium hover:bg-[var(--color-brand)] hover:text-white transition-colors">.srt</button>
+          <button id="cp-session-view-delete" type="button" class="px-3 py-1 rounded-md bg-[var(--color-surface-strong)] text-xs font-medium hover:bg-red-600 hover:text-white transition-colors">Delete</button>
+        </div>
         <button type="submit" class="px-3 py-1 rounded-md bg-[var(--color-brand)] text-white text-xs font-medium hover:bg-[var(--color-brand-strong)] transition-colors">Close</button>
       </footer>
     </form>
