@@ -89,7 +89,7 @@ import {
 } from "../lib/whisperClient";
 import { openPip, isPipSupported, type PipHandle } from "../lib/pipClient";
 import { detectSupport, isMobileDevice } from "../lib/browserSupport";
-import { Agreement } from "../lib/agreement";
+import { WordAgreement } from "../lib/agreement";
 import { looksHallucinated } from "../lib/hallucination";
 import {
   formatTxt,
@@ -383,7 +383,12 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
 
   // Rolling-window state
   const rolling = createRollingBuffer();
-  const agreement = new Agreement();
+  // v0.4.8 — agreement now operates on Word[] from the worker's chunks
+  // payload (was: string[] from text). Live caption UX is byte-equivalent
+  // — we just convert Words back to bare text strings at the rendering
+  // call sites for now. v0.5 commit 6 onwards reads Word.tStartMs +
+  // confidence directly. See docs/roadmap/v0.5-word-timestamps.md.
+  const agreement = new WordAgreement();
   let tickTimer: number | null = null;
   let inFlight = false;
   let nextTickMs = TICK_INTERVAL_MS;
@@ -1069,7 +1074,14 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     try {
       const audio = rolling.snapshot();
       const audioWasOverCap = rolling.isOverCap();
-      const { text, durationMs } = await whisper.transcribeWindow(audio);
+      // v0.4.8 — switched from transcribeWindow() (text only) to
+      // transcribeWindow2() which exposes per-word chunks: Word[].
+      // We pass chunks to agreement (WordAgreement) instead of the
+      // tokenized text string. The agreement key is text.toLowerCase()
+      // .trim() so prefix-match behaviour is unchanged from v0.4.7.
+      // text is kept around for hallucination detection (looksHallucinated
+      // works on strings) and as a fallback when chunks is empty.
+      const { text, chunks, durationMs } = await whisper.transcribeWindow2(audio);
 
       // Adapt tick interval — never tick faster than 1.2× last inference,
       // never slower than MAX_TICK_MS. Keeps slow WebGPU/WASM devices
@@ -1081,9 +1093,21 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
 
       // Drop obvious hallucinations (repeated-word runs).
       if (text && !looksHallucinated(text)) {
-        agreement.ingest(text);
+        // If chunks came back empty (older transformers.js, silent audio,
+        // or extractWordChunks defensive bailout), synthesize a minimal
+        // Word[] from text so the agreement loop stays operational. This
+        // is the v0.4.8 safety hatch — without it, an upstream regression
+        // in word-timestamps would silently stop captions entirely.
+        const items = chunks.length > 0
+          ? chunks
+          : text.trim().split(/\s+/).filter(Boolean).map((w) => ({
+              text: w,
+              tStartMs: 0,
+              tEndMs: 0,
+            }));
+        agreement.ingest(items);
         if (agreement.newlyCommitted.length > 0) {
-          appendCommittedWords(agreement.newlyCommitted);
+          appendCommittedWords(agreement.newlyCommitted.map((w) => w.text.trim()));
         }
         renderLiveLine(agreement.liveLine);
       }

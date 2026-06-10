@@ -19,8 +19,13 @@
 //             { type: "dispose" }
 //   outgoing: { type: "loading", message: string, progress?: number }
 //             { type: "ready", model: string, device: "webgpu" | "wasm" }
-//             { type: "result", text: string, id?: number, durationMs: number }
+//             { type: "result", text: string, chunks: Word[], id?: number, durationMs: number }
 //             { type: "error", message: string }
+//
+// Word: { text: string, tStartMs: number, tEndMs: number }
+//   Per-word timing emitted by transformers.js when return_timestamps:"word"
+//   is set (v0.4.8+). Downstream consumers may ignore `chunks` and read only
+//   `text` to preserve v0.4.3- behaviour during incremental migration.
 
 import { pipeline, env } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.5/dist/transformers.min.js";
 
@@ -178,7 +183,13 @@ async function transcribe(audio, id) {
     const result = await asr(audio, {
       chunk_length_s: 30,
       stride_length_s: 5,
-      return_timestamps: false,
+      // v0.4.8 — flipped from `false` to `"word"`. transformers.js now
+      // returns `{ text, chunks: [{ text, timestamp: [tStartSec, tEndSec] }] }`
+      // where each chunk corresponds to a Whisper-tokenized word. Adds
+      // ~5-15% to decode time; adaptive-tick logic on the parent absorbs
+      // the variance. Downstream code that only needs text reads
+      // `result.text` (unchanged shape); v0.5 features read `result.chunks`.
+      return_timestamps: "word",
       language: "english",
       task: "transcribe",
       // Streaming-friendly decode: greedy + deterministic so the
@@ -210,11 +221,39 @@ async function transcribe(audio, id) {
       initial_prompt: vocabularyPrompt || undefined,
     });
     const text = (result && result.text ? result.text : "").trim();
+    const chunks = extractWordChunks(result);
     const durationMs = Math.round(performance.now() - start);
-    self.postMessage({ type: "result", text, id, durationMs });
+    self.postMessage({ type: "result", text, chunks, id, durationMs });
   } catch (e) {
     self.postMessage({ type: "error", message: (e && e.message) || String(e) });
   }
+}
+
+// Convert transformers.js word-timestamped output into our Word[] shape.
+// Defensive against the known edge cases:
+//   - `chunks` may be undefined entirely (older transformers.js versions
+//     that ignore return_timestamps:"word" — silently fall back to empty)
+//   - A chunk's `timestamp` may be `[start, null]` or `null` (tail tokens
+//     when audio ends mid-word). Use previous chunk's end or 0.
+//   - Whisper sometimes emits zero-width chunks (`tStart === tEnd`).
+//     Keep them — agreement still works on the text; trimming would
+//     break index alignment.
+// Returns Word[] in worker-payload shape: tStartMs/tEndMs (ms, integer).
+function extractWordChunks(result) {
+  if (!result || !Array.isArray(result.chunks)) return [];
+  const out = [];
+  let prevEndMs = 0;
+  for (const c of result.chunks) {
+    if (!c || typeof c.text !== "string") continue;
+    const ts = c.timestamp;
+    let tStartSec = Array.isArray(ts) && typeof ts[0] === "number" ? ts[0] : null;
+    let tEndSec = Array.isArray(ts) && typeof ts[1] === "number" ? ts[1] : null;
+    const tStartMs = tStartSec !== null ? Math.round(tStartSec * 1000) : prevEndMs;
+    const tEndMs = tEndSec !== null ? Math.round(tEndSec * 1000) : tStartMs;
+    out.push({ text: c.text, tStartMs, tEndMs });
+    prevEndMs = tEndMs;
+  }
+  return out;
 }
 
 self.onmessage = async (e) => {
