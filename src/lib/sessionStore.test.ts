@@ -222,9 +222,10 @@ import {
 } from "./sessionStore";
 
 describe("exportAllSessions / importSessions roundtrip", () => {
-  it("exports an empty store as a valid v1 bundle", async () => {
+  it("exports an empty store as a valid v2 bundle (v0.5+ default)", async () => {
     const bundle = await exportAllSessions();
     expect(bundle.version).toBe(EXPORT_VERSION);
+    expect(EXPORT_VERSION).toBe(2);
     expect(bundle.sessions).toEqual([]);
     expect(typeof bundle.exportedAt).toBe("string");
     expect(typeof bundle.appVersion).toBe("string");
@@ -232,7 +233,7 @@ describe("exportAllSessions / importSessions roundtrip", () => {
     expect(Number.isNaN(new Date(bundle.exportedAt).getTime())).toBe(false);
   });
 
-  it("full roundtrip preserves all fields", async () => {
+  it("full roundtrip preserves all fields (v1 input upgrades to v2 via export)", async () => {
     await saveSession({
       startedAt: 1000,
       endedAt: 2000,
@@ -250,6 +251,7 @@ describe("exportAllSessions / importSessions roundtrip", () => {
 
     const bundle = await exportAllSessions();
     expect(bundle.sessions).toHaveLength(2);
+    expect(bundle.version).toBe(2);
 
     // Clear, re-import, verify everything came back.
     await clearAll();
@@ -263,7 +265,13 @@ describe("exportAllSessions / importSessions roundtrip", () => {
     const restored = await listSessions();
     expect(restored).toHaveLength(2);
     expect(restored.map((s) => s.source).sort()).toEqual(["mic", "tab"]);
-    expect(restored.find((s) => s.source === "tab")?.transcript[0].words.join(" ")).toBe("hello world");
+    // v0.5: exported segments are v2 (Word[]), not v1 (string[]).
+    // Read out the .text from each Word to reconstruct the original string.
+    const tabSession = restored.find((s) => s.source === "tab")!;
+    const tabSegment = tabSession.transcript[0];
+    const tabWords = tabSegment.words as Array<{ text: string }>;
+    expect(tabWords.map((w) => w.text).join(" ")).toBe("hello world");
+    expect(tabSession.version).toBe(2);
     expect(restored.find((s) => s.source === "mic")?.modelId).toBe("small");
   });
 
@@ -414,5 +422,238 @@ describe("validateExportBundle", () => {
         ],
       }),
     ).toThrow(/missing required fields/i);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────
+// v0.5 — schema migration (v1 ↔ v2 sessions in storage + import)
+// ────────────────────────────────────────────────────────────────────────
+
+describe("v0.5 session schema migration", () => {
+  // Reuse the same beforeEach via the outer describe — vitest's beforeEach
+  // runs for ANY top-level describe in this file.
+
+  it("saveSession auto-detects v1 transcripts (no version field bump)", async () => {
+    const saved = await saveSession({
+      startedAt: 1000,
+      endedAt: 2000,
+      source: "tab",
+      modelId: "base",
+      transcript: [mkSegment("plain strings only")],
+    });
+    expect(saved.version).toBe(1);
+  });
+
+  it("saveSession auto-detects v2 transcripts when words are Word objects", async () => {
+    const saved = await saveSession({
+      startedAt: 1000,
+      endedAt: 2000,
+      source: "tab",
+      modelId: "base",
+      transcript: [
+        {
+          tMs: 0,
+          words: [
+            { text: "hi", tStartMs: 0, tEndMs: 100 },
+            { text: "there", tStartMs: 100, tEndMs: 250 },
+          ],
+        },
+      ],
+    });
+    expect(saved.version).toBe(2);
+  });
+
+  it("buildPreview works on v2 transcripts (Word objects with .text)", () => {
+    const v2Transcript = [
+      {
+        tMs: 0,
+        words: [
+          { text: "the", tStartMs: 0, tEndMs: 100 },
+          { text: " quick", tStartMs: 100, tEndMs: 300 },
+          { text: " brown", tStartMs: 300, tEndMs: 500 },
+          { text: " fox", tStartMs: 500, tEndMs: 700 },
+        ],
+      },
+    ];
+    expect(buildPreview(v2Transcript)).toBe("the quick brown fox");
+  });
+
+  it("buildPreview handles mixed v1 + v2 segments in one transcript", () => {
+    // While we don't expect mixed sessions in practice, the function is
+    // defensive — verify it doesn't blow up + concatenates both shapes.
+    const mixed = [
+      { tMs: 0, words: ["v1", "first"] },
+      {
+        tMs: 1000,
+        words: [
+          { text: "v2", tStartMs: 0, tEndMs: 100 },
+          { text: " second", tStartMs: 100, tEndMs: 300 },
+        ],
+      },
+    ];
+    expect(buildPreview(mixed)).toBe("v1 first v2 second");
+  });
+
+  it("validateExportBundle accepts v1 bundles (back-compat)", () => {
+    const v1Bundle = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      appVersion: "0.4.2",
+      sessions: [
+        {
+          id: "a",
+          startedAt: 1000,
+          endedAt: 2000,
+          source: "tab",
+          modelId: "base",
+          transcript: [{ tMs: 0, words: ["hello", "world"] }],
+          preview: "hello world",
+        },
+      ],
+    };
+    expect(() => validateExportBundle(v1Bundle)).not.toThrow();
+  });
+
+  it("validateExportBundle accepts v2 bundles", () => {
+    const v2Bundle = {
+      version: 2,
+      exportedAt: new Date().toISOString(),
+      appVersion: "0.5.0",
+      sessions: [
+        {
+          id: "b",
+          startedAt: 1000,
+          endedAt: 2000,
+          source: "mic",
+          modelId: "base",
+          transcript: [
+            {
+              tMs: 0,
+              words: [{ text: "hi", tStartMs: 0, tEndMs: 100 }],
+            },
+          ],
+          preview: "hi",
+        },
+      ],
+    };
+    expect(() => validateExportBundle(v2Bundle)).not.toThrow();
+  });
+
+  it("validateExportBundle rejects bundles with malformed Word objects", () => {
+    const badBundle = {
+      version: 2,
+      exportedAt: new Date().toISOString(),
+      appVersion: "0.5.0",
+      sessions: [
+        {
+          id: "c",
+          startedAt: 1000,
+          endedAt: 2000,
+          source: "tab",
+          modelId: "base",
+          transcript: [
+            // tStartMs is wrong type
+            { tMs: 0, words: [{ text: "hi", tStartMs: "0", tEndMs: 100 }] },
+          ],
+          preview: "hi",
+        },
+      ],
+    };
+    expect(() => validateExportBundle(badBundle)).toThrow(/word/i);
+  });
+
+  it("importSessions migrates v1 bundle sessions → v2 with synthetic timing", async () => {
+    const v1Bundle: ExportBundle = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      appVersion: "0.4.2",
+      sessions: [
+        {
+          id: "old-1",
+          startedAt: 100,
+          endedAt: 200,
+          source: "tab",
+          modelId: "base",
+          transcript: [
+            { tMs: 0, words: ["aa", "bb", "cc"] },
+            { tMs: 500, words: ["dd"] },
+          ],
+          preview: "aa bb cc dd",
+        },
+        // Empty session — shouldn't bump migrated count
+        {
+          id: "old-2",
+          startedAt: 300,
+          endedAt: 400,
+          source: "mic",
+          modelId: "base",
+          transcript: [],
+          preview: "",
+        },
+      ],
+    };
+    const result = await importSessions(v1Bundle);
+    expect(result.imported).toBe(2);
+    expect(result.skipped).toBe(0);
+    expect(result.migrated).toBe(1); // only the non-empty one counts
+
+    const restored = await listSessions();
+    const old1 = restored.find((s) => s.id === "old-1")!;
+    expect(old1.version).toBe(2);
+    // First segment: 3 words → synthetic 333ms each
+    const seg0Words = old1.transcript[0].words as Array<{ text: string; tStartMs: number; tEndMs: number }>;
+    expect(seg0Words).toHaveLength(3);
+    expect(seg0Words[0].text).toBe("aa");
+    expect(seg0Words[0].tStartMs).toBe(0);
+    expect(seg0Words[0].tEndMs).toBeGreaterThan(0);
+    expect(seg0Words[2].text).toBe("cc");
+  });
+
+  it("importSessions doesn't migrate v2 bundles (migrated = 0)", async () => {
+    const v2Bundle: ExportBundle = {
+      version: 2,
+      exportedAt: new Date().toISOString(),
+      appVersion: "0.5.0",
+      sessions: [
+        {
+          id: "new-1",
+          startedAt: 100,
+          endedAt: 200,
+          source: "tab",
+          modelId: "base",
+          transcript: [
+            {
+              tMs: 0,
+              words: [
+                { text: "a", tStartMs: 0, tEndMs: 100 },
+                { text: "b", tStartMs: 100, tEndMs: 200 },
+              ],
+            },
+          ],
+          preview: "a b",
+          version: 2,
+        },
+      ],
+    };
+    const result = await importSessions(v2Bundle);
+    expect(result.imported).toBe(1);
+    expect(result.migrated).toBe(0);
+
+    const restored = await listSessions();
+    expect(restored[0].version).toBe(2);
+    // Per-word timing was real, not synthetic — values match what we sent.
+    const w0 = restored[0].transcript[0].words[0] as { text: string; tStartMs: number; tEndMs: number };
+    expect(w0).toEqual({ text: "a", tStartMs: 0, tEndMs: 100 });
+  });
+
+  it("importSessions rejects unknown bundle versions (forward-compat)", () => {
+    expect(() =>
+      validateExportBundle({
+        version: 99,
+        exportedAt: new Date().toISOString(),
+        appVersion: "5.0.0",
+        sessions: [],
+      }),
+    ).toThrow(/unsupported export version/i);
   });
 });

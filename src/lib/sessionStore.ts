@@ -22,7 +22,8 @@
  * fns are async + Promise-returning.
  */
 
-import type { TranscriptSegment } from "./transcript";
+import type { AnyTranscriptSegment } from "./transcript";
+import { toV2Segments } from "./transcript";
 
 export const DB_NAME = "livecaptionit-history";
 export const DB_VERSION = 1;
@@ -41,10 +42,24 @@ export interface StoredSession {
   source: SessionSource;
   /** Whisper model used (e.g. "base"). */
   modelId: string;
-  /** Committed transcript — same shape used by transcript.ts formatters. */
-  transcript: TranscriptSegment[];
+  /**
+   * Committed transcript — same shape used by transcript.ts formatters.
+   * Can be v1 (`TranscriptSegment[]` with `words: string[]`) for sessions
+   * recorded in v0.4.x, OR v2 (`TranscriptSegment2[]` with `words: Word[]`)
+   * for sessions recorded in v0.5+. The discriminator is on each segment
+   * (see `isV2Segment` in transcript.ts) so a single session can't mix —
+   * v0.5+ always writes v2; v0.4.x always wrote v1. Readers use
+   * `toV2Segments()` / `toV1Segments()` to normalize as needed.
+   */
+  transcript: AnyTranscriptSegment[];
   /** First ~100 chars of transcript text. Pre-computed for fast list views. */
   preview: string;
+  /**
+   * v0.5 — session schema version. Optional for backward-compat: undefined
+   * means v1 (sessions written before v0.5 don't have this field). v0.5+
+   * always writes 2.
+   */
+  version?: 1 | 2;
 }
 
 /** Opens (and migrates) the DB. Cached promise so we don't re-open per call. */
@@ -74,10 +89,20 @@ function reqAsync<T>(req: IDBRequest<T>): Promise<T> {
   });
 }
 
-/** Build the preview string from transcript segments. Pure function. */
-export function buildPreview(transcript: TranscriptSegment[]): string {
+/** Build the preview string from transcript segments. Pure function.
+ *  Handles both v1 (`words: string[]`) and v2 (`words: Word[]`) shapes. */
+export function buildPreview(transcript: AnyTranscriptSegment[]): string {
   const text = transcript
-    .map((s) => s.words.join(" "))
+    .map((s) => {
+      const w = s.words;
+      if (!w || w.length === 0) return "";
+      // v2: Word objects with .text; v1: bare strings.
+      const first = w[0] as unknown;
+      if (typeof first === "object" && first !== null && "text" in first) {
+        return (w as Array<{ text: string }>).map((x) => x.text.trim()).join(" ");
+      }
+      return (w as string[]).join(" ");
+    })
     .join(" ")
     .trim();
   if (text.length <= 100) return text;
@@ -103,11 +128,24 @@ export function generateId(): string {
  *
  * Idempotency contract: a session with the SAME id will replace the
  * existing entry without bumping the prune count (put → no count change).
+ *
+ * v0.5: auto-detects version from the transcript shape. If any segment
+ * has Word objects, session is stored as v2. Otherwise v1 (preserves
+ * v0.4.x semantics for back-compat tests). Callers can still pass
+ * `version` explicitly if they want to force a specific value (rare).
  */
 export async function saveSession(
-  partial: Omit<StoredSession, "id" | "preview"> & { id?: string },
+  partial: Omit<StoredSession, "id" | "preview" | "version"> & { id?: string; version?: 1 | 2 },
   idb?: IDBFactory,
 ): Promise<StoredSession> {
+  // Detect v2 if any segment has a Word object in words[].
+  const detectedVersion: 1 | 2 = partial.transcript.some((seg) => {
+    if (!seg.words || seg.words.length === 0) return false;
+    const first = seg.words[0] as unknown;
+    return typeof first === "object" && first !== null && "text" in first;
+  })
+    ? 2
+    : 1;
   const full: StoredSession = {
     id: partial.id ?? generateId(),
     startedAt: partial.startedAt,
@@ -116,6 +154,7 @@ export async function saveSession(
     modelId: partial.modelId,
     transcript: partial.transcript,
     preview: buildPreview(partial.transcript),
+    version: partial.version ?? detectedVersion,
   };
   const db = await openDB(idb ?? globalThis.indexedDB);
   await new Promise<void>((resolve, reject) => {
@@ -203,26 +242,39 @@ export async function clearAll(idb?: IDBFactory): Promise<void> {
 
 // ────────────────────────────────────────────────────────────────────────
 // v0.4.2 — JSON export / import
+// v0.5 — EXPORT_VERSION bumped 1 → 2 to carry per-word timing.
+// Backward-compat: validateExportBundle accepts BOTH v1 and v2; importer
+// silently migrates v1 sessions to v2 with synthetic per-word timing so
+// users restoring a v0.4.x backup on v0.5+ don't hit a wall.
 // ────────────────────────────────────────────────────────────────────────
 
 /**
- * Version-1 export bundle shape. Future versions get a migration path
- * via `importSessions` rejecting unknown versions explicitly — never a
- * silent break. Bump the schema version + add an `if (bundle.version === N)`
- * branch in importSessions whenever you change StoredSession.
+ * Schema version. Bumped 1 → 2 in v0.5 to carry per-word timing in
+ * each TranscriptSegment. Future versions get a migration path via
+ * `validateExportBundle` accepting the new version + `importSessions`
+ * branching on `bundle.version` — never a silent break of old exports.
  */
-export const EXPORT_VERSION = 1 as const;
+export const EXPORT_VERSION = 2 as const;
 
-export interface ExportBundle {
-  /** Schema version. Locked at 1 for v0.4.2. */
+/** v1 bundle shape — kept for backward-compat reads only. */
+export interface ExportBundleV1 {
   version: 1;
-  /** ISO timestamp of when the export was generated. Informational only. */
   exportedAt: string;
-  /** App version that produced the bundle. Informational only. */
   appVersion: string;
-  /** All sessions, ordered newest first (same as listSessions). */
   sessions: StoredSession[];
 }
+
+/** v2 bundle shape — current. Same fields, different `sessions[].transcript`
+ *  shape (Word[] instead of string[] in each segment's words). */
+export interface ExportBundleV2 {
+  version: 2;
+  exportedAt: string;
+  appVersion: string;
+  sessions: StoredSession[];
+}
+
+/** Union accepted by importers. Producers always emit V2. */
+export type ExportBundle = ExportBundleV1 | ExportBundleV2;
 
 export interface ImportResult {
   /** Sessions newly inserted into the store. */
@@ -231,25 +283,39 @@ export interface ImportResult {
   skipped: number;
   /** Sessions pruned during import to honour MAX_SESSIONS cap. */
   pruned: number;
+  /** v0.5 — sessions upgraded from v1 → v2 with synthetic per-word timing.
+   *  Subset of `imported`. Useful for the post-import toast to be honest
+   *  about which sessions have "real" word timing vs synthetic. */
+  migrated: number;
 }
 
-/** Build an ExportBundle from the current store contents. */
+/** Build an ExportBundle from the current store contents.
+ *  v0.5+ always emits version 2; v1 sessions in the store get upgraded
+ *  via `toV2Segments` at export time so the bundle has uniform shape. */
 export async function exportAllSessions(
   idb?: IDBFactory,
-  appVersion = "0.4.2",
-): Promise<ExportBundle> {
+  appVersion = "0.5.0",
+): Promise<ExportBundleV2> {
   const sessions = await listSessions(idb);
+  const v2Sessions: StoredSession[] = sessions.map((s) => ({
+    ...s,
+    transcript: toV2Segments(s.transcript),
+    version: 2,
+  }));
   return {
-    version: EXPORT_VERSION,
+    version: 2,
     exportedAt: new Date().toISOString(),
     appVersion,
-    sessions,
+    sessions: v2Sessions,
   };
 }
 
 /**
  * Lightweight runtime validation for an imported bundle. Throws an Error
- * with a user-friendly message if the input is not a valid v1 bundle.
+ * with a user-friendly message if the input is not a valid v1 OR v2 bundle.
+ * v0.5: both versions accepted; v1 sessions get migrated to v2 at import
+ * time via `toV2Segments` (synthetic uniform per-word timing).
+ *
  * We deliberately don't use a schema library — keeps the lib zero-deps.
  */
 export function validateExportBundle(input: unknown): asserts input is ExportBundle {
@@ -257,9 +323,9 @@ export function validateExportBundle(input: unknown): asserts input is ExportBun
     throw new Error("Invalid file: expected a JSON object.");
   }
   const obj = input as Record<string, unknown>;
-  if (obj.version !== EXPORT_VERSION) {
+  if (obj.version !== 1 && obj.version !== 2) {
     throw new Error(
-      `Unsupported export version: ${String(obj.version)} (this build expects version ${EXPORT_VERSION}). The file may have been created by a newer version of LiveCaptionIt.`,
+      `Unsupported export version: ${String(obj.version)} (this build accepts versions 1 and 2). The file may have been created by a newer version of LiveCaptionIt.`,
     );
   }
   if (!Array.isArray(obj.sessions)) {
@@ -281,6 +347,34 @@ export function validateExportBundle(input: unknown): asserts input is ExportBun
     ) {
       throw new Error("Invalid file: a session entry is missing required fields.");
     }
+    // v0.5: shape-check the transcript entries to catch malformed bundles
+    // early. v1 transcripts have words: string[]; v2 transcripts have
+    // words: Word[] (objects with text/tStartMs/tEndMs). Mixed within a
+    // single session is not legal but we tolerate it on read — the
+    // formatter union dispatch handles per-segment shape.
+    for (const seg of ss.transcript) {
+      if (typeof seg !== "object" || seg === null) {
+        throw new Error("Invalid file: a transcript segment is not an object.");
+      }
+      const segObj = seg as Record<string, unknown>;
+      if (typeof segObj.tMs !== "number" || !Array.isArray(segObj.words)) {
+        throw new Error("Invalid file: a transcript segment is missing tMs or words.");
+      }
+      // Allow empty words[] (paragraph break placeholder). For non-empty,
+      // ensure each element is either a string (v1) OR a Word-shaped object.
+      for (const w of segObj.words) {
+        const isV1Word = typeof w === "string";
+        const isV2Word =
+          typeof w === "object" &&
+          w !== null &&
+          typeof (w as Record<string, unknown>).text === "string" &&
+          typeof (w as Record<string, unknown>).tStartMs === "number" &&
+          typeof (w as Record<string, unknown>).tEndMs === "number";
+        if (!isV1Word && !isV2Word) {
+          throw new Error("Invalid file: a transcript word is neither a string nor a valid Word object.");
+        }
+      }
+    }
   }
 }
 
@@ -288,7 +382,13 @@ export function validateExportBundle(input: unknown): asserts input is ExportBun
  * Import sessions from a parsed-and-validated ExportBundle. Inserts each
  * session with skip-on-duplicate-id semantics, then prunes oldest by
  * `startedAt` if the store exceeds MAX_SESSIONS after the import. Returns
- * counts so the UI can surface a clear "X imported, Y skipped" toast.
+ * counts so the UI can surface a clear "X imported, Y skipped, Z migrated"
+ * toast.
+ *
+ * v0.5: when the bundle is version 1, each session's transcript is
+ * upgraded to v2 via `toV2Segments` (synthetic uniform per-word timing
+ * within each segment). The migrated count is surfaced so users know
+ * which sessions have synthetic vs real word timing.
  *
  * Implementation note: each session goes through a SEPARATE add — we
  * deliberately do NOT use a single transaction for the whole import.
@@ -318,6 +418,8 @@ export async function importSessions(
 
   let imported = 0;
   let skipped = 0;
+  let migrated = 0;
+  const isV1Bundle = bundle.version === 1;
 
   for (const session of bundle.sessions) {
     const existed = await new Promise<boolean>((resolve, reject) => {
@@ -330,6 +432,14 @@ export async function importSessions(
       skipped++;
       continue;
     }
+    // v0.5 migration: if importing a v1 bundle, upgrade the transcript to
+    // v2 shape with synthetic per-word timing. This keeps the store
+    // monotonically v2 once v0.5+ has touched it — saves us from having
+    // to handle mixed-version sessions on every read.
+    const upgradedTranscript = isV1Bundle
+      ? toV2Segments(session.transcript)
+      : session.transcript;
+    const wasMigrated = isV1Bundle && session.transcript.length > 0;
     // Use the canonical writer (saveSession) so preview is regenerated
     // and the prune-on-cap logic runs consistently with normal inserts.
     await saveSession(
@@ -339,11 +449,13 @@ export async function importSessions(
         endedAt: session.endedAt,
         source: session.source,
         modelId: session.modelId,
-        transcript: session.transcript,
+        transcript: upgradedTranscript,
+        version: 2,
       },
       factory,
     );
     imported++;
+    if (wasMigrated) migrated++;
   }
 
   const postCount = await new Promise<number>((resolve, reject) => {
@@ -356,7 +468,7 @@ export async function importSessions(
   // per-insert MAX_SESSIONS cap. = (pre + imported) - post.
   const pruned = Math.max(0, preCount + imported - postCount);
 
-  return { imported, skipped, pruned };
+  return { imported, skipped, pruned, migrated };
 }
 
 /**

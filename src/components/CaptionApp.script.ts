@@ -90,6 +90,7 @@ import {
 import { openPip, isPipSupported, type PipHandle } from "../lib/pipClient";
 import { detectSupport, isMobileDevice } from "../lib/browserSupport";
 import { WordAgreement } from "../lib/agreement";
+import type { Word } from "../lib/word";
 import { looksHallucinated } from "../lib/hallucination";
 import {
   formatTxt,
@@ -97,7 +98,7 @@ import {
   formatSrt,
   defaultFilename,
   downloadString,
-  type TranscriptSegment,
+  type TranscriptSegment2,
 } from "../lib/transcript";
 
 type AppState = "idle" | "loading" | "active" | "error";
@@ -407,7 +408,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
   // Transcript recording — every committed batch gets pushed here with its
   // timestamp relative to sessionStartMs. Cleared on Start/Reset, used by
   // the download buttons that appear in the active panel after Stop.
-  let transcriptSegments: TranscriptSegment[] = [];
+  let transcriptSegments: TranscriptSegment2[] = [];
   let sessionStartMs = 0;
   /** v0.4.0: source-of-truth for THIS session's source — "tab" | "mic" | "sample".
    *  Different from currentSource (which is the user's persistent preference)
@@ -903,12 +904,21 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
    * Words are appended to the LAST <p> until it hits MAX_LINE_WORDS,
    * then a new <p> starts — keeps lines visually bounded without doing
    * heavy sentence segmentation.
+   *
+   * v0.5: takes Word[] (was string[]) so per-word timing is preserved
+   * into transcriptSegments. Display still uses Word.text.trim() so the
+   * rendered captions are byte-identical to v0.4.x. The v2 segment
+   * shape (`{ words: Word[], tMs }`) flows through into sessionStore +
+   * shareLink + .vtt/.srt exports.
    */
-  function appendCommittedWords(words: string[]) {
+  function appendCommittedWords(words: Word[]) {
     if (words.length === 0) return;
     // Record into transcript log first (the source of truth for downloads).
+    // v0.5: persist Word[] (not bare strings) so per-word timing is
+    // available downstream. Defensive copy because agreement may reuse
+    // its internal array across ticks.
     transcriptSegments.push({
-      words: [...words],
+      words: words.map((w) => ({ ...w })),
       tMs: sessionStartMs ? performance.now() - sessionStartMs : 0,
     });
     // On first commit, clear placeholder + hide status banner
@@ -932,6 +942,8 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     pendingTurnBreak = false;
 
     for (const word of words) {
+      const displayText = word.text.trim();
+      if (!displayText) continue;
       // Count only the bold (committed) words for line-break math
       const committedWordCount = lastP
         ? committedWordsIn(lastP)
@@ -943,7 +955,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
       }
       const strong = document.createElement("strong");
       strong.className = "font-semibold";
-      strong.textContent = (committedWordsIn(lastP) > 0 ? " " : "") + word;
+      strong.textContent = (committedWordsIn(lastP) > 0 ? " " : "") + displayText;
       lastP.appendChild(strong);
       captionCount++;
     }
@@ -1022,13 +1034,24 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
    *  captions the user already SAW on screen (in muted italic).
    *
    *  Skips obvious hallucinations so we don't bold "you you you you" runs.
-   *  This is the user-visibility-preserving counterpart to agreement.reset(). */
+   *  This is the user-visibility-preserving counterpart to agreement.reset().
+   *
+   *  v0.5: synthesizes Word[] with zero per-word timing from the live tail
+   *  text since the live tail doesn't have committed per-word timing yet.
+   *  The segment-level tMs anchor is what matters for export — synthetic
+   *  per-word timing within a flush-segment is downstream-friendly. */
   function flushLiveTailToCommitted() {
     const liveText = agreement.liveLine;
     if (!liveText) return;
     if (looksHallucinated(liveText)) return;
     const liveTokens = liveText.trim().split(/\s+/).filter(Boolean);
-    if (liveTokens.length > 0) appendCommittedWords(liveTokens);
+    if (liveTokens.length === 0) return;
+    const liveWords: Word[] = liveTokens.map((text) => ({
+      text,
+      tStartMs: 0,
+      tEndMs: 0,
+    }));
+    appendCommittedWords(liveWords);
   }
 
   async function tick() {
@@ -1107,7 +1130,10 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
             }));
         agreement.ingest(items);
         if (agreement.newlyCommitted.length > 0) {
-          appendCommittedWords(agreement.newlyCommitted.map((w) => w.text.trim()));
+          // v0.5 — pass Word[] straight through (was string[] mapping
+          // in v0.4.8). The Word objects carry per-word timing into
+          // transcriptSegments + sessionStore + share URLs.
+          appendCommittedWords(agreement.newlyCommitted);
         }
         renderLiveLine(agreement.liveLine);
       }
