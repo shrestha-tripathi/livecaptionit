@@ -1,0 +1,113 @@
+---
+/**
+ * Cross-promotion strip for sister tools at worksoffline.in.
+ *
+ * Shown ONCE per page below the FAQ. Mobile-first card grid.
+ *
+ * Curation rule: list 3 most relevant tools for the captions audience —
+ * privacy-conscious users who care that "data never leaves your device".
+ *
+ * If we add more than 4, replace this hardcoded list with a fetch from
+ * a worksoffline.in API. For now, hand-curated = fastest path + lowest risk.
+ */
+import { site } from "../site.config";
+
+interface Tool {
+  name: string;
+  href: string;
+  tagline: string;
+  blurb: string;
+  /** Icon as an SVG path string set as innerHTML of an <svg viewBox="0 0 24 24">. */
+  iconPath: string;
+}
+
+const tools: Tool[] = [
+  {
+    name: "BlitzTable",
+    href: "https://blitztable.worksoffline.in",
+    tagline: "Fast CSV/Excel viewer",
+    blurb: "Open giant CSVs and Excel sheets in the browser — no upload, no waiting.",
+    iconPath: '<rect x="3" y="3" width="18" height="18" rx="2" /><line x1="3" y1="9" x2="21" y2="9" /><line x1="3" y1="15" x2="21" y2="15" /><line x1="9" y1="3" x2="9" y2="21" /><line x1="15" y1="3" x2="15" y2="21" />',
+  },
+  {
+    name: "PDF Unlocker",
+    href: "https://pdfunlocker.worksoffline.in",
+    tagline: "Remove PDF passwords",
+    blurb: "Strip protection from encrypted PDFs locally. The file never leaves your browser.",
+    iconPath: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" /><circle cx="10" cy="16" r="2" /><path d="m16 10-4.5 4.5" /><path d="m15 11 1 1" />',
+  },
+  {
+    name: "DevToy",
+    href: "https://devtoy.worksoffline.in",
+    tagline: "Developer micro-tools",
+    blurb: "JSON formatter, JWT decoder, regex tester, base64 — all client-side.",
+    iconPath: '<polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" />',
+  },
+];
+
+const portfolioUrl = "https://worksoffline.in";
+---
+
+<section class="cp-cross-promo mt-20 max-w-5xl mx-auto px-4 sm:px-6">
+  <header class="flex items-end justify-between gap-4 mb-5">
+    <div>
+      <h2 class="text-base font-semibold tracking-tight text-[var(--color-fg)]">
+        More tools that never upload your data
+      </h2>
+      <p class="text-xs text-[var(--color-fg-muted)] mt-1">
+        Built by the same person who built {site.name}, hosted at
+        <a
+          href={portfolioUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          class="text-[var(--color-fg-muted)] underline decoration-dotted hover:text-[var(--color-brand-strong)] transition-colors"
+        >worksoffline.in</a>.
+      </p>
+    </div>
+    <a
+      href={portfolioUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+      class="hidden sm:inline-flex items-center gap-1.5 text-xs font-medium text-[var(--color-fg-muted)] hover:text-[var(--color-brand-strong)] transition-colors whitespace-nowrap"
+    >
+      See all
+      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="m12 5 7 7-7 7" /></svg>
+    </a>
+  </header>
+
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+    {tools.map((t) => (
+      <a
+        href={t.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        class="cp-promo-card group flex flex-col p-4 rounded-xl bg-[var(--color-surface)] hover:bg-[var(--color-surface-strong)] border border-[var(--color-border)] hover:border-[var(--color-brand)]/40 transition-colors"
+        data-promo-tool={t.name}
+      >
+        <div class="flex items-center gap-2.5 mb-2">
+          <span class="cp-promo-icon inline-flex items-center justify-center w-8 h-8 rounded-lg bg-[var(--color-bg)] text-[var(--color-fg-muted)] group-hover:text-[var(--color-brand-strong)] transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" set:html={t.iconPath} />
+          </span>
+          <div class="flex-1 min-w-0">
+            <div class="text-sm font-semibold text-[var(--color-fg)] truncate">{t.name}</div>
+            <div class="text-[11px] text-[var(--color-fg-muted)] truncate">{t.tagline}</div>
+          </div>
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="text-[var(--color-fg-subtle)] opacity-0 group-hover:opacity-100 transition-opacity"><path d="M7 17 17 7" /><path d="M7 7h10v10" /></svg>
+        </div>
+        <p class="text-xs text-[var(--color-fg-muted)] leading-relaxed">{t.blurb}</p>
+      </a>
+    ))}
+  </div>
+
+  <div class="sm:hidden mt-3 text-center">
+    <a
+      href={portfolioUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+      class="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--color-fg-muted)] hover:text-[var(--color-brand-strong)] transition-colors"
+    >
+      See all tools at worksoffline.in
+      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="m12 5 7 7-7 7" /></svg>
+    </a>
+  </div>
+</section>
