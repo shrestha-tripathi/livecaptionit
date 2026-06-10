@@ -657,3 +657,41 @@ body.pip-window .cp-caption-box[data-caption-theme="terminal"] > header {
 #cp-caption-stream .live-tail-word[data-confidence="high"] {
   opacity: 1;
 }
+
+/* ────────────────────────────────────────────────────────────────────
+   v0.5 commit 8 — Transcript editor (contenteditable session viewer)
+   ────────────────────────────────────────────────────────────────────
+
+   When the user clicks Edit in the session-viewer dialog, the body
+   gets `contenteditable=true` + `.cp-edit-active`. We use the latter
+   to:
+
+     - Show a subtle inset ring so the user can see the editable
+       boundary at a glance (default focus ring is suppressed by the
+       browser inside contenteditable).
+     - Light up per-word spans with a hover affordance so users
+       discover that words are individually clickable.
+     - Switch the body from whitespace-pre-wrap (read-only) to normal
+       block flow (paragraph spacing for the multi-<p> editable view).
+*/
+#cp-session-view-body.cp-edit-active {
+  white-space: normal;
+  outline: 2px solid var(--color-brand);
+  outline-offset: -2px;
+  border-radius: 0;
+  cursor: text;
+}
+#cp-session-view-body.cp-edit-active p {
+  margin-bottom: 0.75rem;
+}
+#cp-session-view-body.cp-edit-active p:last-child {
+  margin-bottom: 0;
+}
+#cp-session-view-body.cp-edit-active span[data-word-idx] {
+  padding: 1px 2px;
+  border-radius: 3px;
+  transition: background 120ms ease;
+}
+#cp-session-view-body.cp-edit-active span[data-word-idx]:hover {
+  background: var(--color-surface-strong);
+}

@@ -94,6 +94,11 @@ import type { Word } from "../lib/word";
 import { looksHallucinated } from "../lib/hallucination";
 import { StabilityTracker } from "../lib/confidence";
 import {
+  renderEditableSegments,
+  extractPlainText,
+  reconcileEditedText,
+} from "../lib/transcriptEditor";
+import {
   formatTxt,
   formatVtt,
   formatSrt,
@@ -418,6 +423,17 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
   const sessionViewDlVtt = rootEl.querySelector<HTMLButtonElement>("#cp-session-view-dl-vtt")!;
   const sessionViewDlSrt = rootEl.querySelector<HTMLButtonElement>("#cp-session-view-dl-srt")!;
   const sessionViewDelete = rootEl.querySelector<HTMLButtonElement>("#cp-session-view-delete")!;
+  // v0.5 commit 8 — transcript editor refs. The dialog gets two action
+  // rows (read-only with .txt/.vtt/.srt/Edit/Delete vs edit-mode with
+  // Save/Cancel). Edit button is hidden by default + only shown for v2
+  // sessions (per-word timing available). Save persists back to IDB;
+  // Cancel re-renders from the pre-edit snapshot.
+  const sessionViewActions = rootEl.querySelector<HTMLDivElement>("#cp-session-view-actions")!;
+  const sessionViewEditActions = rootEl.querySelector<HTMLDivElement>("#cp-session-view-edit-actions")!;
+  const sessionViewEditBtn = rootEl.querySelector<HTMLButtonElement>("#cp-session-view-edit")!;
+  const sessionViewSaveBtn = rootEl.querySelector<HTMLButtonElement>("#cp-session-view-save")!;
+  const sessionViewCancelBtn = rootEl.querySelector<HTMLButtonElement>("#cp-session-view-cancel")!;
+  const sessionViewCloseBtn = rootEl.querySelector<HTMLButtonElement>("#cp-session-view-close")!;
   const dlVttBtn = rootEl.querySelector<HTMLButtonElement>("#cp-dl-vtt")!;
   const dlSrtBtn = rootEl.querySelector<HTMLButtonElement>("#cp-dl-srt")!;
   const dlShareBtn = rootEl.querySelector<HTMLButtonElement>("#cp-dl-share")!;
@@ -2041,8 +2057,31 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
 
   // ── v0.4.0: session history (Recent sessions list on idle screen) ──
   /** Currently-viewed session id, set by `viewSession()` so download/delete
-   *  buttons in the dialog know what to act on. */
+   *  buttons inside the dialog know which session to operate on. */
   let viewingSessionId: string | null = null;
+
+  // ─ v0.5 commit 8 — transcript editor state ─────────────────────────
+  /** Pre-edit snapshot of the active session. Used by Cancel to revert
+   *  and by viewSession() to track whether Edit mode is even available
+   *  for the current session (must be all-v2 segments). */
+  let editorOriginalSegments: TranscriptSegment2[] | null = null;
+  /** Edit-mode flag — true between Edit-click and Save/Cancel/Close. */
+  let editorActive = false;
+
+  /** Exit Edit mode without saving: re-render the read-only body from
+   *  the snapshot, hide Save/Cancel, show Edit/Download/Delete. Called
+   *  by Cancel, by Save (after persist), and by dialog-close (defensive
+   *  — avoids leaving the next session-view in editor state). */
+  function exitEditorMode() {
+    editorActive = false;
+    sessionViewBody.contentEditable = "false";
+    sessionViewBody.classList.remove("cp-edit-active");
+    sessionViewEditActions.classList.add("hidden");
+    sessionViewActions.classList.remove("hidden");
+    if (editorOriginalSegments) {
+      sessionViewBody.textContent = formatTxt(editorOriginalSegments) || "(empty session)";
+    }
+  }
 
   /** Format epoch ms as a friendly relative time ("2 min ago", "3 hours ago",
    *  "yesterday"). Defaults to date for >7 days ago. Pure-ish (uses Date.now). */
@@ -2172,6 +2211,24 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     const durSec = Math.max(1, Math.round((s.endedAt - s.startedAt) / 1000));
     sessionViewMeta.textContent = `${startDate.toLocaleString()} · ${sourceLabelFor(s.source)} · ${durSec}s · model: ${s.modelId}`;
     sessionViewBody.textContent = formatTxt(s.transcript) || "(empty session)";
+
+    // v0.5 commit 8 — Edit button visibility. Only show for v2 sessions
+    // (per-word timing available). Mixed/v1 sessions get the read-only
+    // path because the editor's realignment heuristic needs per-word
+    // timestamps to gracefully preserve timing on unchanged words.
+    const allV2 = s.transcript.length > 0 && s.transcript.every(isV2Segment);
+    if (allV2) {
+      editorOriginalSegments = s.transcript as TranscriptSegment2[];
+      sessionViewEditBtn.classList.remove("hidden");
+    } else {
+      editorOriginalSegments = null;
+      sessionViewEditBtn.classList.add("hidden");
+    }
+    // Defensive — if a previous dialog session left editor mode on
+    // (shouldn't happen because close handlers exit it, but belt-and-
+    // suspenders), reset state cleanly.
+    if (editorActive) exitEditorMode();
+
     sessionViewDialog.showModal();
   }
 
@@ -2201,9 +2258,16 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     // Hide the Delete button in shared mode — there's nothing to delete
     // (the transcript only exists in this page session).
     sessionViewDelete.classList.add("hidden");
+    // v0.5 commit 8 — also hide Edit in shared mode. Edits couldn't be
+    // persisted back to IDB (no viewingSessionId) and surfacing the
+    // button would mislead users into thinking their fixes save.
+    sessionViewEditBtn.classList.add("hidden");
+    editorOriginalSegments = null;
+    if (editorActive) exitEditorMode();
     sessionViewDialog.showModal();
     // Restore Delete button visibility next time the dialog opens via
-    // viewSession() — listen once.
+    // viewSession() — listen once. (Edit button visibility is re-set
+    // by viewSession() based on v2-ness, so no restore needed here.)
     const restore = () => {
       sessionViewDelete.classList.remove("hidden");
       sharedTranscriptSegments = null;
@@ -2262,6 +2326,92 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
         void renderHistory();
       })
       .catch((err) => recordError(err, "sessionStore", { ctx: { op: "delete" } }));
+  });
+
+  // ─ v0.5 commit 8 — transcript editor handlers ─────────────────────────
+  // Edit: swap body into contenteditable HTML view + swap action rows
+  // from read-only (.txt/.vtt/.srt/Edit/Delete) to edit-mode (Cancel/Save).
+  // Disables the Close [✕] button while editing — closing mid-edit would
+  // silently discard work; user must explicitly Cancel or Save first.
+  sessionViewEditBtn.addEventListener("click", () => {
+    if (!editorOriginalSegments || editorActive) return;
+    editorActive = true;
+    // Render per-word spans via the pure helper so the data-* anchors
+    // are present for debugging + potential future per-word click-to-edit.
+    sessionViewBody.innerHTML = renderEditableSegments(editorOriginalSegments);
+    sessionViewBody.contentEditable = "true";
+    sessionViewBody.classList.add("cp-edit-active");
+    sessionViewActions.classList.add("hidden");
+    sessionViewEditActions.classList.remove("hidden");
+    sessionViewCloseBtn.disabled = true;
+    sessionViewCloseBtn.classList.add("opacity-50", "pointer-events-none");
+    // Auto-focus the body so the user can start typing immediately.
+    sessionViewBody.focus();
+  });
+
+  // Cancel: discard edits, revert to read-only snapshot. No undo stack
+  // per roadmap OQ #4 — single-step.
+  sessionViewCancelBtn.addEventListener("click", () => {
+    if (!editorActive) return;
+    exitEditorMode();
+    sessionViewCloseBtn.disabled = false;
+    sessionViewCloseBtn.classList.remove("opacity-50", "pointer-events-none");
+  });
+
+  // Save: extract plain text → reconcile back to TranscriptSegment2[] →
+  // persist to IDB → refresh sessions list. On any error, surface a
+  // toast and stay in edit mode so the user can retry without losing work.
+  sessionViewSaveBtn.addEventListener("click", () => {
+    if (!editorActive || !editorOriginalSegments || !viewingSessionId) return;
+    void (async () => {
+      const id = viewingSessionId;
+      if (!id) return;
+      const editedText = extractPlainText(sessionViewBody);
+      const newSegments = reconcileEditedText(editedText, editorOriginalSegments!);
+
+      // Fetch + write back. We re-fetch instead of holding the StoredSession
+      // in editorOriginalSegments because the session may have been
+      // mutated by another tab between viewSession() and Save (rare but
+      // possible). The transcript field is the only thing we touch.
+      try {
+        const s = await getSession(id);
+        if (!s) {
+          toast.error("Session no longer exists — your edits weren't saved.");
+          exitEditorMode();
+          return;
+        }
+        const updated: StoredSession = {
+          ...s,
+          transcript: newSegments,
+        };
+        await saveSession(updated);
+        // Adopt the new segments as the post-save snapshot so subsequent
+        // re-edits in the same dialog session compare against fresh data.
+        editorOriginalSegments = newSegments;
+        exitEditorMode();
+        sessionViewCloseBtn.disabled = false;
+        sessionViewCloseBtn.classList.remove("opacity-50", "pointer-events-none");
+        toast.success("Transcript saved.");
+        // Refresh the recent-sessions list to update the preview text.
+        void renderHistory();
+      } catch (err) {
+        recordError(err, "sessionStore", { ctx: { op: "saveEdit" } });
+        toast.error("Couldn't save edits. Please try again.");
+      }
+    })();
+  });
+
+  // Dialog close — defensive cleanup. If somehow the dialog closes while
+  // edit mode is active (e.g. Escape key bypassing the disabled Close
+  // button — most browsers honour disabled on submit buttons but Escape
+  // closes <dialog> independently), revert to the snapshot so the next
+  // viewSession() doesn't inherit a stale state.
+  sessionViewDialog.addEventListener("close", () => {
+    if (editorActive) {
+      exitEditorMode();
+      sessionViewCloseBtn.disabled = false;
+      sessionViewCloseBtn.classList.remove("opacity-50", "pointer-events-none");
+    }
   });
   historyClearBtn.addEventListener("click", () => {
     if (!confirm("Clear all session history? This can't be undone.")) return;
