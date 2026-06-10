@@ -28,6 +28,14 @@ export const MIN_AUDIO_SECONDS = 1.5; // wait for enough context before first ti
 
 export interface CaptureHandle {
   stop: () => void;
+  /**
+   * v0.4.1: pause/resume the audio thread via AudioContext.suspend/resume.
+   * Worklet's process() stops being invoked while suspended, so the
+   * RollingBuffer freezes cleanly with no half-frame edge cases.
+   * Safe to call regardless of current state — no-op if already paused/running.
+   */
+  pause: () => Promise<void>;
+  resume: () => Promise<void>;
   hasAudio: boolean;
   sourceLabel: string;
 }
@@ -77,7 +85,7 @@ export async function startCapture(opts: CaptureOptions): Promise<CaptureHandle>
   }
 
   // Step 3: pipe into AudioContext via shared helper
-  return wireAudioPipeline(audioTracks, sourceLabel, opts);
+  return await wireAudioPipeline(audioTracks, sourceLabel, opts);
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -118,20 +126,27 @@ export async function startMicCapture(opts: CaptureOptions): Promise<CaptureHand
   }
   const sourceLabel = audioTracks[0].label || "Microphone";
 
-  return wireAudioPipeline(audioTracks, sourceLabel, opts);
+  return await wireAudioPipeline(audioTracks, sourceLabel, opts);
 }
 
 // ────────────────────────────────────────────────────────────────────────
-// wireAudioPipeline — shared AudioContext + ScriptProcessor wiring used by
+// wireAudioPipeline — shared AudioContext + AudioWorklet wiring used by
 // both startCapture (display) and startMicCapture (microphone).
 // Extracted in v0.2.0 to avoid duplication when adding the mic source.
+// v0.4.1: migrated from deprecated ScriptProcessorNode to AudioWorklet.
+// Also exposes pause() / resume() on the returned handle for Space
+// pause/resume (uses AudioContext.suspend/resume — the worklet's
+// process() simply stops being invoked while suspended, so the rolling
+// buffer freezes cleanly with no half-frame edge cases).
 // ────────────────────────────────────────────────────────────────────────
 
-function wireAudioPipeline(
+const WORKLET_MODULE_URL = "/audio-worklet-capture.js";
+
+async function wireAudioPipeline(
   audioTracks: MediaStreamTrack[],
   sourceLabel: string,
   opts: CaptureOptions,
-): CaptureHandle {
+): Promise<CaptureHandle> {
   // Pipe into AudioContext at 16kHz mono (Whisper's native rate)
   const ctx = new AudioContext({ sampleRate: TARGET_SAMPLE_RATE });
   const ctxRate = ctx.sampleRate;
@@ -144,15 +159,27 @@ function wireAudioPipeline(
   const merger = ctx.createChannelMerger(1);
   source.connect(merger);
 
-  // ScriptProcessor is deprecated but universally supported; AudioWorklet
-  // upgrade is a v0.3 refactor.
-  const PROCESSOR_BUF = 4096;
-  const processor = ctx.createScriptProcessor(PROCESSOR_BUF, 1, 1);
+  // Load + instantiate the AudioWorklet processor. Module URL is served
+  // from /public/ so CF Pages caches it with correct JS MIME.
+  try {
+    await ctx.audioWorklet.addModule(WORKLET_MODULE_URL);
+  } catch (err) {
+    // Tear down on failure so we don't leak an open AudioContext + tracks.
+    audioTracks.forEach((t) => t.stop());
+    void ctx.close();
+    throw new Error(
+      `Couldn't load audio worklet (${WORKLET_MODULE_URL}): ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+  }
+
+  const workletNode = new AudioWorkletNode(ctx, "capture-processor");
 
   let lastLevelTs = 0;
 
-  processor.onaudioprocess = (e) => {
-    const input = e.inputBuffer.getChannelData(0);
+  workletNode.port.onmessage = (e: MessageEvent<Float32Array>) => {
+    const input = e.data;
 
     // Optional manual downsample (linear) if ctx.sampleRate didn't match 16kHz.
     // Always allocates a fresh Float32Array we own, so it's safe to pass to
@@ -166,8 +193,8 @@ function wireAudioPipeline(
         processed[i] = input[Math.floor(i * ratio)];
       }
     } else {
-      // Copy because the input buffer is reused by Web Audio on the next callback.
-      processed = new Float32Array(input);
+      // Worklet already transferred us an owned buffer — no copy needed.
+      processed = input;
     }
 
     // Level meter (RMS) — throttled to ~10 Hz
@@ -188,8 +215,8 @@ function wireAudioPipeline(
     }
   };
 
-  merger.connect(processor);
-  processor.connect(ctx.destination);
+  merger.connect(workletNode);
+  workletNode.connect(ctx.destination);
 
   // Detect when user clicks browser's native "Stop sharing" button
   const onTrackEnded = () => opts.onSourceEnded();
@@ -200,13 +227,31 @@ function wireAudioPipeline(
       t.removeEventListener("ended", onTrackEnded);
       t.stop();
     });
-    try { processor.disconnect(); } catch {}
+    try { workletNode.port.onmessage = null; } catch {}
+    try { workletNode.disconnect(); } catch {}
     try { merger.disconnect(); } catch {}
     try { source.disconnect(); } catch {}
     void ctx.close();
   };
 
-  return { stop, hasAudio: true, sourceLabel };
+  // v0.4.1: pause/resume via AudioContext.suspend/resume.
+  // - suspend() stops the audio thread → worklet.process() no longer
+  //   fires → no new frames flow → RollingBuffer freezes at current length.
+  // - resume() resumes the audio thread → frames flow again naturally.
+  // - State is read from ctx.state directly (no local mirror to drift).
+  const pause = async () => {
+    if (ctx.state === "running") {
+      await ctx.suspend();
+    }
+  };
+
+  const resume = async () => {
+    if (ctx.state === "suspended") {
+      await ctx.resume();
+    }
+  };
+
+  return { stop, pause, resume, hasAudio: true, sourceLabel };
 }
 
 // ────────────────────────────────────────────────────────────────────────

@@ -237,6 +237,14 @@ function mergeToMono(buffer: AudioBuffer): Float32Array {
  */
 export interface SampleCaptureHandle {
   stop: () => void;
+  /**
+   * v0.4.1: matches CaptureHandle's pause/resume contract so the
+   * caller (script.ts) can treat sample and live capture identically
+   * when wiring Space pause/resume. For sample mode we also pause the
+   * underlying HTMLAudioElement so user hears playback stop.
+   */
+  pause: () => Promise<void>;
+  resume: () => Promise<void>;
   hasAudio: boolean;
   sourceLabel: string;
 }
@@ -285,6 +293,21 @@ export async function startSampleCapture(
     stop: () => {
       handle?.stop();
       void audioContext.close().catch(() => {});
+    },
+    // v0.4.1: pause/resume both the HTMLAudioElement (so user hears it
+    // stop) AND the AudioContext (so the worklet stops emitting frames
+    // and downstream RollingBuffer freezes cleanly).
+    pause: async () => {
+      try { audioEl.pause(); } catch {}
+      if (audioContext.state === "running") {
+        await audioContext.suspend().catch(() => {});
+      }
+    },
+    resume: async () => {
+      if (audioContext.state === "suspended") {
+        await audioContext.resume().catch(() => {});
+      }
+      try { await audioEl.play(); } catch {}
     },
     hasAudio: true,
     sourceLabel: "Sample audio",
