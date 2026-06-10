@@ -7,7 +7,18 @@
  * word-level timestamps (transformers.js can produce them but our streaming
  * tick loop discards them), so VTT/SRT precision is at the segment level
  * (~600-1200ms granularity matching the tick interval). Documented in UI.
+ *
+ * v0.4.3: every formatter's text output runs through `polishPunctuation`
+ * before being returned. Polish is a pure-function pass that fixes
+ * stray-space-before-punctuation, missing-space-after-period, "i" →
+ * "I", and a handful of other Whisper output quirks. We polish at the
+ * formatter boundary (not on the live caption stream) so the visible
+ * DOM stays byte-for-byte what Whisper emitted — only downloaded files
+ * get the cleanup. This keeps the live UI's per-word DOM logic
+ * unchanged and avoids any risk of regression on the streaming path.
  */
+
+import { polishPunctuation } from "./punctuation";
 
 export interface TranscriptSegment {
   /** Words committed in this batch. */
@@ -44,7 +55,7 @@ export function formatTxt(segments: TranscriptSegment[]): string {
   const paragraphs = groupParagraphs(segments, PARA_GAP_MS);
   return (
     paragraphs
-      .map((para) => para.flat().join(" "))
+      .map((para) => polishPunctuation(para.flat().join(" ")))
       .join("\n\n") + "\n"
   );
 }
@@ -72,7 +83,7 @@ function toCues(
       return {
         start: seg.tMs,
         end: Math.max(seg.tMs + 500, end), // minimum 500ms cue duration
-        text: seg.words.join(" "),
+        text: polishPunctuation(seg.words.join(" ")),
       };
     });
 }
