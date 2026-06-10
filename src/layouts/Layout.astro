@@ -80,10 +80,53 @@ const allJsonLd = [...baseJsonLd, ...jsonLd];
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#ffffff" id="theme-color-meta" />
 
-    {/* Geist + Geist Mono via Google Fonts */}
+    {/* DNS prefetch + preconnect to jsDelivr — Whisper worker pulls
+        transformers.js from there on first model load. Prewarming the
+        TCP/TLS handshake saves ~200-400ms before the user even clicks
+        Start (cheap idle-time hint, won't fetch any payload). */}
+    <link rel="dns-prefetch" href="https://cdn.jsdelivr.net" />
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+
+    {/* Prefetch the Whisper worker JS file at low priority on the home
+        page (where the Start button is) so the file is in HTTP cache by
+        the time the user clicks. The worker is only INSTANTIATED on
+        Start — prefetching just pulls the bytes early. ~8KB. Skipped
+        on every other page (about, contact, etc.) where it's wasted
+        bandwidth. */}
+    {Astro.url.pathname === "/" && (
+      <link rel="prefetch" href="/whisper-worker.js" as="worker" />
+    )}
+
+    {/* Geist + Geist Mono via Google Fonts.
+
+        Two-line non-blocking pattern:
+         1. `rel="preload" as="style"` starts fetching the CSS without
+            blocking render.
+         2. The `onload="this.rel='stylesheet'"` swap promotes the
+            preload to a real stylesheet once it's loaded — so text
+            paints in fallback fonts immediately, then re-paints with
+            Geist when ready. No layout shift because Geist + system-ui
+            have similar metrics, and `font-display: swap` is already
+            in the Google CSS payload.
+         3. `<noscript>` fallback for JS-disabled clients keeps the
+            font working there too (just blocks render — same as before).
+        Net: First Contentful Paint typically ~400-600ms earlier on slow
+        connections (no longer waits for fonts.googleapis.com round-trip).
+        Reference: https://web.dev/articles/defer-non-critical-css */}
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link
+      rel="preload"
+      as="style"
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap"
+      onload="this.onload=null;this.rel='stylesheet'"
+    />
+    <noscript>
+      <link
+        href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap"
+        rel="stylesheet"
+      />
+    </noscript>
 
     {/* OG / Twitter */}
     <meta property="og:type" content="website" />
