@@ -1,7 +1,42 @@
+# robots.txt for livecaptionit.com
+# Updated: 2026-06-10
+# Policy: allow indexing of HTML pages; block runtime/build assets that
+# aren't intended as standalone pages and that pollute search results.
+
+# ─── Allow all reputable crawlers ───
 User-agent: *
 Allow: /
 
-# Disallow the web worker — it's a runtime asset, not a page to index
+# Block runtime JS workers / service worker — these are NOT pages.
+# Excluding them keeps "site:livecaptionit.com" search results clean.
 Disallow: /whisper-worker.js
+Disallow: /audio-worklet-capture.js
+Disallow: /sw.js
 
+# Block hashed build artifacts under /_astro/ — Astro-emitted JS/CSS
+# bundles. They have content-hashed names that change every build, so
+# indexing them creates ghost results that 404 on the next deploy.
+Disallow: /_astro/
+
+# Block the PWA manifest — referenced via <link rel="manifest"> but not
+# meant to appear as a search result.
+Disallow: /manifest.webmanifest
+
+# ─── Explicitly allow the major search bots (no separate rules — they
+#     inherit the wildcard policy above, but listing them defuses any
+#     "is this site blocking us?" worry from the bot-monitoring tools
+#     site owners use). ───
+User-agent: Googlebot
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+User-agent: DuckDuckBot
+Allow: /
+
+User-agent: Applebot
+Allow: /
+
+# ─── Sitemap ───
 Sitemap: https://livecaptionit.com/sitemap.xml
