@@ -1,9 +1,9 @@
-# CaptionPip — Spec
+# LiveCaptionIt — Spec
 
 **Status:** v0.1 → v0.3.1 shipped · **v0.3.2 IN PROGRESS** (translate-mode removal + PiP substate bug fix)
 **Date:** 2026-06-08 (v0.1) · 2026-06-09 (v0.1.1 → v0.3.0)
-**Working domain:** `captionpip.com` (RDAP-verified available — buy before commit if you keep the name)
-**Repo:** `github.com/shrestha-tripathi/captionpip` (private until shipped)
+**Working domain:** `livecaptionit.com` (RDAP-verified available — buy before commit if you keep the name)
+**Repo:** `github.com/shrestha-tripathi/livecaptionit` (private until shipped)
 **Ship target:** v0.3.0 this week
 
 ## Changelog
@@ -247,7 +247,7 @@ async function popOut() {
 ### 3.5 File structure
 
 ```
-captionpip/
+livecaptionit/
 ├── package.json
 ├── tsconfig.json (strict)
 ├── astro.config.mjs (Tailwind v4 via @tailwindcss/vite)
@@ -302,7 +302,7 @@ captionpip/
 
 ## 4. Brand + design
 
-**Wordmark:** "CaptionPip"
+**Wordmark:** "LiveCaptionIt"
 **Tagline:** "Live captions for any tab. Floats over anything. Never uploads."
 **Brand icon:** Speech bubble (chat-like) with a small **PiP indicator** (mini speech bubble in the corner of the main bubble) — visually riffs on Document PiP itself
 **Color identity:** dark default theme to match "designer/dev productivity tool" feel. Brand accent = a vibrant teal-cyan (`oklch(75% 0.15 200)`), distinct from screencolorpicker's VIBGYOR and FTN's blue
@@ -316,12 +316,12 @@ captionpip/
 ## 5. User journey (must verify each step works in v0.1 before declaring done)
 
 ```
-1. Land on captionpip.com (or localhost:4321 in dev)
+1. Land on livecaptionit.com (or localhost:4321 in dev)
 2. See hero: "Live captions for any tab. Floats over anything. Never uploads."
 3. See 3-step explainer with icons:
    (a) Pick a tab → (b) Captions appear → (c) Pop out to float
 4. Click big "Start captions" button
-5. Browser permission prompt: "captionpip.com wants to share content from a tab"
+5. Browser permission prompt: "livecaptionit.com wants to share content from a tab"
 6. User picks Chrome tab / window / screen + ticks "share audio" checkbox
 7. Status changes to "Loading Whisper model... (one-time, ~75 MB)"
 8. Progress bar fills as model downloads
@@ -403,7 +403,7 @@ These are gates. If any FAILS during v0.1 build, halt and re-plan before continu
 
 1. **Latency acceptable?** If 3s feels too slow, we can drop chunk to 2s but accuracy drops noticeably.
 2. **Hindi priority?** If YES → v0.2 leads with IndicWhisper integration. If NO → v0.2 focuses on transcript download + caption styling.
-3. **Domain pick:** stick with `captionpip.com` or pick from the available list?
+3. **Domain pick:** stick with `livecaptionit.com` or pick from the available list?
 4. **Brand visual:** speech-bubble-with-pip vs something else?
 5. **Pip.tools portfolio play** — should the next 2 tools (FloatPrompt, ScreenRecPip) live on separate domains or under a unified pip.tools umbrella?
 
@@ -820,7 +820,7 @@ manual test checklist + the rollback being a one-commit revert.
 # v0.2.0 — Polish release
 
 > **Theme:** "Production-grade, not weekend prototype." Four user-visible
-> upgrades that together transform CaptionPip from a clever demo into a
+> upgrades that together transform LiveCaptionIt from a clever demo into a
 > tool people actually choose over Otter / YouTube CC / Chrome Live
 > Caption. No new architecture, no model swaps, no scope creep.
 
@@ -846,7 +846,7 @@ tab. v0.2.0 delivers all four.
 UI:
 - Dropdown in the idle screen prefs panel, BELOW the size sliders
 - Each option shows its size + a cache indicator (checkmark if already in IndexedDB, arrow if download needed)
-- Selection persists in `localStorage` key `captionpip:model-pref`
+- Selection persists in `localStorage` key `livecaptionit:model-pref`
 - Switching models mid-session is NOT supported in v0.2.0 — applies to next Start. Documented inline.
 - All three are `onnx-community/whisper-{size}` (consistent dtype variants — critical, per existing skill notes)
 
@@ -871,7 +871,7 @@ Implementation:
   `--caption-font-scale`, `--caption-font-weight`, `--caption-align`, `--caption-shadow`
 - Existing `.caption-text` rule reads these vars with sensible fallbacks
 - Position uses flex `align-items` on `#cp-caption-stream` (top/center/end)
-- Persisted to `captionpip:caption-style` JSON in localStorage
+- Persisted to `livecaptionit:caption-style` JSON in localStorage
 - Live-applies when slider changes (works for both inline and PiP via CSS var)
 
 ### 3. Transcript download (.txt / .vtt / .srt)
@@ -953,11 +953,11 @@ Stale claims to fix:
 ## 2.0.5 Persistence
 
 ```
-captionpip:model-pref        — "tiny" | "base" | "small"
-captionpip:caption-style     — { fontScale, fontWeight, position, textShadow }
-captionpip:pip-prefs         — existing { widthPct, heightPct }
-captionpip:inline-pref       — existing "0" | "1"
-captionpip:theme             — existing "light" | "dark"
+livecaptionit:model-pref        — "tiny" | "base" | "small"
+livecaptionit:caption-style     — { fontScale, fontWeight, position, textShadow }
+livecaptionit:pip-prefs         — existing { widthPct, heightPct }
+livecaptionit:inline-pref       — existing "0" | "1"
+livecaptionit:theme             — existing "light" | "dark"
 ```
 
 Forward-compat: each `loadXxx()` helper falls back to defaults on parse
@@ -1011,7 +1011,7 @@ Total: ~1000 LOC, 5 commits.
 
 # v0.3.0 — Translation Mode
 
-**Goal:** Make CaptionPip useful for users watching/consuming content in foreign languages. Whisper natively supports a `translate` task that takes any of 99 source languages and outputs English — no new model download, no bundle bloat, no API call. This is a structural moat play: Otter/Fireflies sell this as a $30/mo cloud feature; we ship it for $0, 100% local.
+**Goal:** Make LiveCaptionIt useful for users watching/consuming content in foreign languages. Whisper natively supports a `translate` task that takes any of 99 source languages and outputs English — no new model download, no bundle bloat, no API call. This is a structural moat play: Otter/Fireflies sell this as a $30/mo cloud feature; we ship it for $0, 100% local.
 
 ## 3.0.1 Why now
 
@@ -1036,7 +1036,7 @@ Total: ~1000 LOC, 5 commits.
 ### 2. Client + script wiring
 
 - `WhisperClient.transcribeWindow(audio, opts?)` takes optional `{ task }`. Defaults preserved.
-- `CaptionApp.script.ts` reads `currentTask` from a top-of-`init()` `let` (TDZ rule), persisted to `localStorage["captionpip:task"]`. Default `"transcribe"`.
+- `CaptionApp.script.ts` reads `currentTask` from a top-of-`init()` `let` (TDZ rule), persisted to `localStorage["livecaptionit:task"]`. Default `"transcribe"`.
 - Each `tick()` passes `{ task: currentTask }` to `transcribeWindow`.
 - Switching mode mid-session resets agreement + rolling buffer (different output language = stale committed text is wrong).
 
@@ -1081,7 +1081,7 @@ Total: ~1000 LOC, 5 commits.
 ## 3.0.5 Persistence
 
 ```
-captionpip:task = "transcribe" | "translate"
+livecaptionit:task = "transcribe" | "translate"
 ```
 
 Default `"transcribe"`. Load helper falls back to default on parse failure / unknown value.

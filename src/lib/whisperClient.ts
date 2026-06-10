@@ -36,7 +36,7 @@ export interface ModelSpec {
   label: string;
   /** Hugging Face model ID. ALL must be onnx-community/* so dtype variants
    *  exist for our WebGPU encoder=fp32 / decoder=q4 config. Using the
-   *  Xenova/* port silently hangs (see captionpip-project skill notes). */
+   *  Xenova/* port silently hangs (see livecaptionit-project skill notes). */
   hfId: string;
   /** Approximate download size — shown in UI to set expectations. */
   sizeMb: number;

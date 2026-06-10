@@ -107,7 +107,7 @@ const allJsonLd = [...baseJsonLd, ...jsonLd];
     <script is:inline>
       (function () {
         try {
-          var stored = localStorage.getItem("captionpip:theme");
+          var stored = localStorage.getItem("livecaptionit:theme");
           var theme = stored === "light" || stored === "dark"
             ? stored
             : (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");

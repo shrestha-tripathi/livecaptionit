@@ -115,7 +115,7 @@ export function defaultFilename(ext: "txt" | "vtt" | "srt", now = new Date()): s
   const dd = pad(now.getDate());
   const hh = pad(now.getHours());
   const mi = pad(now.getMinutes());
-  return `captionpip-${yyyy}-${mm}-${dd}-${hh}${mi}.${ext}`;
+  return `livecaptionit-${yyyy}-${mm}-${dd}-${hh}${mi}.${ext}`;
 }
 
 /** Trigger a download in the browser. Pure DOM, no library. */

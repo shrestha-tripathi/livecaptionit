@@ -1,4 +1,4 @@
-# CaptionPip — Design System (v0.1)
+# LiveCaptionIt — Design System (v0.1)
 
 Visual contract. Tokens, type, spacing, anti-patterns. Companion to AGENTS.md.
 
@@ -49,7 +49,7 @@ Speech bubble (rounded square with tail) + PiP mini-bubble in the lower-right co
 
 1. ❌ Use `border-*` utilities — use `shadow-line` / `shadow-line-strong` instead
 2. ❌ Stack opacity on muted text tokens — fails WCAG on light theme (already-tuned)
-3. ❌ Use rainbow / multi-color gradients — that's screencolorpicker's brand language, not CaptionPip's
+3. ❌ Use rainbow / multi-color gradients — that's screencolorpicker's brand language, not LiveCaptionIt's
 4. ❌ Add cyan accent anywhere outside the "active recording" + "primary CTA" + "brand pill" surfaces — the wedge dilutes if it's everywhere
 5. ❌ Use `text-xs` for body-flow content — minimum `text-sm` for muted text (else fails WCAG)
 6. ❌ Use animation without `prefers-reduced-motion` respect (already handled globally)

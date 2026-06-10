@@ -99,11 +99,11 @@ describe("transcript formatters", () => {
   });
 
   describe("defaultFilename", () => {
-    it("formats as captionpip-YYYY-MM-DD-HHMM.{ext}", () => {
+    it("formats as livecaptionit-YYYY-MM-DD-HHMM.{ext}", () => {
       const fixed = new Date(2026, 5, 9, 14, 30); // June 9 2026 14:30 (month 0-indexed)
-      expect(defaultFilename("txt", fixed)).toBe("captionpip-2026-06-09-1430.txt");
-      expect(defaultFilename("vtt", fixed)).toBe("captionpip-2026-06-09-1430.vtt");
-      expect(defaultFilename("srt", fixed)).toBe("captionpip-2026-06-09-1430.srt");
+      expect(defaultFilename("txt", fixed)).toBe("livecaptionit-2026-06-09-1430.txt");
+      expect(defaultFilename("vtt", fixed)).toBe("livecaptionit-2026-06-09-1430.vtt");
+      expect(defaultFilename("srt", fixed)).toBe("livecaptionit-2026-06-09-1430.srt");
     });
   });
 });

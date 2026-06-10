@@ -2,7 +2,7 @@
  * Single source of truth for ALL brand strings.
  *
  * Rules:
- *  - The literal "captionpip" / "CaptionPip" must NOT appear anywhere
+ *  - The literal "livecaptionit" / "LiveCaptionIt" must NOT appear anywhere
  *    else in src/. Use `site.name`, `site.shortName`, etc. instead.
  *  - All values can be overridden via PUBLIC_SITE_* env vars
  *    (e.g. in Cloudflare Pages dashboard) without code changes.
@@ -14,19 +14,19 @@
 
 const env = import.meta.env;
 
-const rawSiteUrl = env.PUBLIC_SITE_URL ?? "https://captionpip.com";
+const rawSiteUrl = env.PUBLIC_SITE_URL ?? "https://livecaptionit.com";
 const siteUrl = /\.pages\.dev/i.test(rawSiteUrl)
-  ? "https://captionpip.com"
+  ? "https://livecaptionit.com"
   : rawSiteUrl;
 
-const rawDomain = env.PUBLIC_SITE_DOMAIN ?? "captionpip.com";
+const rawDomain = env.PUBLIC_SITE_DOMAIN ?? "livecaptionit.com";
 const domain = /\.pages\.dev/i.test(rawDomain)
-  ? "captionpip.com"
+  ? "livecaptionit.com"
   : rawDomain;
 
 export const site = {
-  name: env.PUBLIC_SITE_NAME ?? "CaptionPip",
-  shortName: env.PUBLIC_SITE_SHORT_NAME ?? "CaptionPip",
+  name: env.PUBLIC_SITE_NAME ?? "LiveCaptionIt",
+  shortName: env.PUBLIC_SITE_SHORT_NAME ?? "LiveCaptionIt",
   tagline:
     env.PUBLIC_SITE_TAGLINE ??
     "Live captions for any tab. Floats over anything. Never uploads.",
@@ -37,7 +37,7 @@ export const site = {
   url: siteUrl,
   basePath: env.PUBLIC_BASE_PATH ?? "/",
   githubUrl:
-    env.PUBLIC_GITHUB_URL ?? "https://github.com/shrestha-tripathi/captionpip",
+    env.PUBLIC_GITHUB_URL ?? "https://github.com/shrestha-tripathi/livecaptionit",
   author: env.PUBLIC_SITE_AUTHOR ?? "Shrestha Tripathi",
   contactEmail:
     env.PUBLIC_SITE_CONTACT_EMAIL ?? "shrestha.tripathi@gmail.com",

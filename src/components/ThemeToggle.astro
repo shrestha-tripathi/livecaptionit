@@ -38,7 +38,7 @@
       const next = cur === "dark" ? "light" : "dark";
       if (next === "dark") document.documentElement.setAttribute("data-theme", "dark");
       else document.documentElement.removeAttribute("data-theme");
-      try { localStorage.setItem("captionpip:theme", next); } catch (e) {}
+      try { localStorage.setItem("livecaptionit:theme", next); } catch (e) {}
       const meta = document.getElementById("theme-color-meta");
       if (meta) meta.setAttribute("content", next === "dark" ? "#0a0a0a" : "#ffffff");
       window.dispatchEvent(new CustomEvent("themechange", { detail: { theme: next } }));

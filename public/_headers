@@ -11,6 +11,16 @@
 # ============================================================================
 # Noindex the .pages.dev infrastructure domain(s)
 # ============================================================================
+# Includes both the current `livecaptionit.pages.dev` and the legacy
+# `captionpip.pages.dev` (pre-rename) hostname as defense-in-depth — if
+# the old CF project still resolves or is ever recreated under the old
+# name, Google would index duplicate HTML.
+
+https://livecaptionit.pages.dev/*
+  X-Robots-Tag: noindex, nofollow
+
+https://*.livecaptionit.pages.dev/*
+  X-Robots-Tag: noindex, nofollow
 
 https://captionpip.pages.dev/*
   X-Robots-Tag: noindex, nofollow

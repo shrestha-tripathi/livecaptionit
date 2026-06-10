@@ -66,11 +66,11 @@ const FORCE_COMMIT_KEEP_SECONDS = 2; // keep this much trailing audio after forc
 const SILENCE_RMS_THRESHOLD = 0.005; // below this = treated as silence (skip transcription)
 const SILENCE_RESET_SECONDS = 2.5; // sustained silence longer than this → wipe buffer + agreement (kills Whisper hallucinations)
 const HALLUCINATION_MAX_REPEAT = 4; // kept in sync with DEFAULT_REPEAT_THRESHOLD in lib/hallucination.ts — bump both together if the threshold needs tuning
-const INLINE_PREF_KEY = "captionpip:inline-pref";
-const PIP_PREFS_KEY = "captionpip:pip-prefs";
-const MODEL_PREF_KEY = "captionpip:model-pref";
-const CAPTION_STYLE_KEY = "captionpip:caption-style";
-const SOURCE_PREF_KEY = "captionpip:source-pref";
+const INLINE_PREF_KEY = "livecaptionit:inline-pref";
+const PIP_PREFS_KEY = "livecaptionit:pip-prefs";
+const MODEL_PREF_KEY = "livecaptionit:model-pref";
+const CAPTION_STYLE_KEY = "livecaptionit:caption-style";
+const SOURCE_PREF_KEY = "livecaptionit:source-pref";
 
 type SourceKind = "tab" | "mic";
 function loadSourcePref(): SourceKind {
@@ -85,7 +85,7 @@ function saveSourcePref(v: SourceKind) {
 }
 
 // NOTE: v0.3.0 shipped a translate task toggle (Transcribe vs Translate → English)
-// backed by `captionpip:task` localStorage. Removed in v0.3.2 because Whisper's
+// backed by `livecaptionit:task` localStorage. Removed in v0.3.2 because Whisper's
 // translate quality on real-world music + non-English speech wasn't good enough
 // to ship as a feature (Despacito → "of thug of thug" loops; Hindi lyrics →
 // hallucinated brand names). The decoder-side `no_repeat_ngram_size: 3` and
@@ -787,7 +787,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
         renderLiveLine("");
       }
     } catch (e) {
-      console.warn("[CaptionPip] tick failed:", e);
+      console.warn("[LiveCaptionIt] tick failed:", e);
     } finally {
       inFlight = false;
       scheduleNextTick();
@@ -854,7 +854,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
         }
       } catch (e) {
         // PiP open failed — fall back to inline rendering, don't abort
-        console.warn("[CaptionPip] PiP open failed, falling back to inline:", e);
+        console.warn("[LiveCaptionIt] PiP open failed, falling back to inline:", e);
         pipHandle = null;
       }
     }
@@ -1009,7 +1009,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
       });
       setPipMode(true);
     } catch (e) {
-      console.error("[CaptionPip] PiP open failed:", e);
+      console.error("[LiveCaptionIt] PiP open failed:", e);
       alert((e as Error).message);
     }
   }

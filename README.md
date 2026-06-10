@@ -1,8 +1,8 @@
-# CaptionPip
+# LiveCaptionIt
 
 > Live captions for any tab. Floats over anything. Never uploads.
 
-CaptionPip turns any browser-shareable audio source (a YouTube tab, a web meeting,
+LiveCaptionIt turns any browser-shareable audio source (a YouTube tab, a web meeting,
 a podcast, a live stream) into live captions, then pops them into a Document
 Picture-in-Picture window so they stay visible while you switch to another app.
 
@@ -27,8 +27,8 @@ scope and the deferred-feature roadmap.
 ## Dev
 
 ```bash
-git clone https://github.com/shrestha-tripathi/captionpip.git
-cd captionpip
+git clone https://github.com/shrestha-tripathi/livecaptionit.git
+cd livecaptionit
 cp .env.example .env   # optional, overrides defaults
 npm install
 npm run dev            # http://localhost:4321

@@ -1,10 +1,10 @@
-# AGENTS.md — CaptionPip project rules
+# AGENTS.md — LiveCaptionIt project rules
 
 Read this before making any change to this repo.
 
 ## Project mission
 
-CaptionPip is a browser-only live captions tool. The product IS the moat:
+LiveCaptionIt is a browser-only live captions tool. The product IS the moat:
 the moment we add an account, a server, an upload step, or a "premium" tier
 that puts captioning behind a wall, we've lost the privacy differentiator.
 
@@ -18,7 +18,7 @@ that puts captioning behind a wall, we've lost the privacy differentiator.
 
 1. **Brand strings:** ONLY in `src/site.config.ts`. Before commit:
    ```bash
-   grep -rln "CaptionPip" src/ | grep -v site.config.ts
+   grep -rln "LiveCaptionIt" src/ | grep -v site.config.ts
    ```
    Empty = clean. Hits = inline brand string that breaks future renames.
 
@@ -43,7 +43,7 @@ that puts captioning behind a wall, we've lost the privacy differentiator.
 
 8. **`grep` test before claiming a rebrand is done:**
    ```bash
-   grep -rln "CaptionPip" src/ public/ astro.config.* package.json 2>/dev/null \
+   grep -rln "LiveCaptionIt" src/ public/ astro.config.* package.json 2>/dev/null \
      | grep -v site.config.ts
    ```
 

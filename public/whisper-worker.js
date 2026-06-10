@@ -1,4 +1,4 @@
-// CaptionPip — Whisper transcription worker.
+// LiveCaptionIt — Whisper transcription worker.
 //
 // Runs in a Web Worker spawned by src/lib/whisperClient.ts.
 // Loads transformers.js from CDN (jsDelivr ESM) so we don't bundle the ~15MB

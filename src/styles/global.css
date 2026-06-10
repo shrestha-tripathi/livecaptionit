@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /*
- * CaptionPip design tokens. Light default, dark via [data-theme="dark"].
+ * LiveCaptionIt design tokens. Light default, dark via [data-theme="dark"].
  * Cyan brand accent reserved for active/recording surfaces.
  * Geist + Geist Mono via Google Fonts (loaded in Layout.astro).
  */

@@ -1,5 +1,5 @@
 /**
- * Feature detection for CaptionPip's required + nice-to-have browser APIs.
+ * Feature detection for LiveCaptionIt's required + nice-to-have browser APIs.
  * Returns plain objects (no React/Astro deps) so they're safe to call from
  * both server-rendered and client-only contexts.
  */

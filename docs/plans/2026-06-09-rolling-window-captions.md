@@ -27,7 +27,7 @@
 **Step 1: Install Vitest**
 
 ```bash
-cd ~/projects/captionpip
+cd ~/projects/livecaptionit
 npm install -D vitest
 ```
 
@@ -789,7 +789,7 @@ async function tick() {
       renderLiveLine(agreement.liveLine);
     }
   } catch (e) {
-    console.warn("[CaptionPip] tick failed:", e);
+    console.warn("[LiveCaptionIt] tick failed:", e);
   } finally {
     inFlight = false;
     scheduleNextTick();
@@ -853,7 +853,7 @@ Expected: tests pass (14/14), astro check 0 errors, build succeeds.
 **Step 9: Grep guard**
 
 ```bash
-grep -rln "CaptionPip" src/ public/ astro.config.* package.json 2>/dev/null \
+grep -rln "LiveCaptionIt" src/ public/ astro.config.* package.json 2>/dev/null \
   | grep -v site.config.ts
 # Empty = clean
 grep -rln "Xenova" src/ public/ 2>/dev/null
@@ -903,11 +903,11 @@ Walk through the checklist in SPEC.md §1.2.11.
 **Step 3: Push to origin**
 
 ```bash
-cd ~/projects/captionpip
+cd ~/projects/livecaptionit
 TOKEN=$(grep "^GITHUB_TOKEN=" ~/.hermes/.env | head -1 | cut -d= -f2- | tr -d '\n\r"')
-git remote set-url origin "https://shrestha-tripathi:${TOKEN}@github.com/shrestha-tripathi/captionpip.git"
+git remote set-url origin "https://shrestha-tripathi:${TOKEN}@github.com/shrestha-tripathi/livecaptionit.git"
 git push origin main 2>&1 | tail -5
-git remote set-url origin "https://github.com/shrestha-tripathi/captionpip.git"
+git remote set-url origin "https://github.com/shrestha-tripathi/livecaptionit.git"
 ```
 
 ---

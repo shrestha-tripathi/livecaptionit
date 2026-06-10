@@ -4,4 +4,4 @@ Allow: /
 # Disallow the web worker — it's a runtime asset, not a page to index
 Disallow: /whisper-worker.js
 
-Sitemap: https://captionpip.com/sitemap.xml
+Sitemap: https://livecaptionit.com/sitemap.xml
