@@ -95,6 +95,14 @@ const faqJsonLd = {
         text: `<p>On Windows: yes, if you pick "Entire screen" in the source picker and your browser is allowed to capture system audio (Chrome and Edge support this). On macOS and Linux, the browser can only capture audio from another browser tab — so use Zoom Web or Spotify Web instead. macOS users can install BlackHole (free virtual audio device) to route desktop app audio into the browser if needed.</p>`,
       },
     },
+    {
+      "@type": "Question",
+      name: "Can it tell who is speaking? (speaker diarization)",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: `<p>Not yet — and honestly, it's harder than it sounds in a browser. When you capture a tab, every speaker arrives as one mono audio stream at similar volume, so distinguishing "Speaker A" from "Speaker B" needs a separate voice-fingerprinting model (~300MB) that we haven't shipped to keep ${site.name} fast and lightweight. A future release may split paragraphs on long pauses (a cheap approximation that doesn't claim speaker identity). For now, the transcript is one continuous stream of text.</p>`,
+      },
+    },
   ],
 };
 ---
