@@ -484,6 +484,48 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     renderPrefsUI();
   });
 
+  // v0.4.3 — Resizable PiP: capture the user's manual resizes and write
+  // them back to pipPrefs so the size persists across sessions. Browsers
+  // don't expose a PiP "moved/resized" event to the opener, so we sample
+  // the actual outerWidth/outerHeight at close time PLUS install a
+  // debounced resize listener on the PiP window itself for cases where
+  // the opener tab is closed first (we still get one final sample then).
+  let pipResizeSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  function persistPipDimensionsFromHandle(handle: PipHandle | null): void {
+    if (!handle?.pipWindow) return;
+    try {
+      const w = handle.pipWindow.outerWidth || handle.pipWindow.innerWidth || 0;
+      const h = handle.pipWindow.outerHeight || handle.pipWindow.innerHeight || 0;
+      if (w < 100 || h < 80) return; // ignore unreasonable readings
+      const screenW = window.screen?.width || 1920;
+      const screenH = window.screen?.height || 1080;
+      const widthPct = clamp(Math.round((w / screenW) * 100), 15, 100);
+      const heightPct = clamp(Math.round((h / screenH) * 100), 10, 80);
+      // Only persist if it actually changed (avoid pointless localStorage
+      // writes on close-without-resize).
+      if (widthPct === pipPrefs.widthPct && heightPct === pipPrefs.heightPct) return;
+      pipPrefs = { widthPct, heightPct };
+      savePipPrefs(pipPrefs);
+      renderPrefsUI();
+    } catch {
+      /* ignore — pipWindow may already be closing */
+    }
+  }
+  function wirePipResizeAutosave(handle: PipHandle | null): void {
+    if (!handle?.pipWindow) return;
+    const onResize = () => {
+      if (pipResizeSaveTimer) clearTimeout(pipResizeSaveTimer);
+      pipResizeSaveTimer = setTimeout(() => {
+        persistPipDimensionsFromHandle(handle);
+      }, 400);
+    };
+    try {
+      handle.pipWindow.addEventListener("resize", onResize);
+    } catch {
+      /* ignore — pipWindow may be cross-origin-restricted (shouldn't be, but safe) */
+    }
+  }
+
   // ── Model picker: render the radio list with size + cache indicators ──
   //   Cache check is async → render once synchronously (no checks), then
   //   re-render after the cache probes resolve so the indicators light up.
@@ -1103,10 +1145,21 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
           width,
           height,
           onClose: () => {
+            // v0.4.3 — capture final dimensions BEFORE pipHandle nulls,
+            // so a user who manually resized the PiP keeps their size on
+            // next open. Browsers don't fire 'resize' on PiP windows for
+            // the opener — so we sample at close time as the next best
+            // signal.
+            persistPipDimensionsFromHandle(pipHandle);
             pipHandle = null;
             setPipMode(false);
           },
         });
+        // v0.4.3 — also wire a 'resize' listener on the PiP window itself
+        // so we capture intermediate sizes (e.g. if the user resizes,
+        // closes the parent tab, we still get the final size). Debounced
+        // so we're not hammering localStorage on every drag pixel.
+        wirePipResizeAutosave(pipHandle);
         // Caption box is now physically inside PiP. Hide the main-page mount.
         setPipMode(true);
         // Seed the caption box with a friendly waiting state. Copy varies
@@ -1393,10 +1446,13 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
         width,
         height,
         onClose: () => {
+          // v0.4.3 — also capture final size on mid-session "Pop out" close path.
+          persistPipDimensionsFromHandle(pipHandle);
           pipHandle = null;
           setPipMode(false);
         },
       });
+      wirePipResizeAutosave(pipHandle);
       setPipMode(true);
     } catch (e) {
       recordError(e, "pip", { ctx: { op: "open" } });
