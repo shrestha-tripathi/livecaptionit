@@ -25,6 +25,22 @@ const faqJsonLd = {
     },
     {
       "@type": "Question",
+      name: "Does it store anything?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: `<p>${site.name} stores your last 20 caption transcripts locally in your browser (IndexedDB) so you can revisit and re-download them from the "Recent sessions" panel on the home page. <strong>Only the text is stored — never the raw audio.</strong> Click "Clear all" anytime to wipe history. Nothing ever leaves your device. Your model preference, caption style, and PiP window size are also saved (localStorage) for convenience.</p>`,
+      },
+    },
+    {
+      "@type": "Question",
+      name: "Can I try it without picking a tab or granting microphone access?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: `<p>Yes. Click "Try with sample audio · no setup" on the home page. It plays a short bundled audio clip through the same pipeline that captions your real audio — no permission prompts. Useful to see how the rolling-window captions feel, judge whether the model picker tier (tiny/base/small) you've chosen is fast enough on your device, or just confirm everything works before you commit to picking a tab.</p>`,
+      },
+    },
+    {
+      "@type": "Question",
       name: "Which browsers are supported?",
       acceptedAnswer: {
         "@type": "Answer",

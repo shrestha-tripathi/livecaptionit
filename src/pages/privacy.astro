@@ -16,8 +16,8 @@ const today = new Date().toISOString().slice(0, 10);
       <h2 class="text-lg font-semibold text-[var(--color-fg)] mt-8">What data we process</h2>
       <ul class="list-disc pl-5 space-y-2">
         <li><strong class="text-[var(--color-fg)]">Audio</strong> from the source you pick (a browser tab, window, or screen). This audio is processed locally in your browser by the Whisper speech-recognition model. <strong>It is never sent to our servers or any third party.</strong> When you stop captioning, the audio stream ends and nothing is retained.</li>
-        <li><strong class="text-[var(--color-fg)]">Transcribed text</strong> appears in your browser only. We do not store, log, or transmit transcripts.</li>
-        <li><strong class="text-[var(--color-fg)]">Theme preference</strong> is saved in your browser's localStorage so the page remembers light or dark next visit. This data stays on your device.</li>
+        <li><strong class="text-[var(--color-fg)]">Transcribed text</strong> appears in your browser. Your last 20 session transcripts (text only — never audio) are saved locally in your browser's IndexedDB so you can revisit and re-download them from the "Recent sessions" panel on the home page. <strong>We do not transmit or log any transcripts.</strong> Clear all history anytime via the panel's "Clear all" button, or per-session via the viewer.</li>
+        <li><strong class="text-[var(--color-fg)]">Caption + model preferences</strong> (theme, model tier, caption style, PiP window size, source preference) are saved in your browser's localStorage so settings stick between visits. This data stays on your device.</li>
       </ul>
 
       <h2 class="text-lg font-semibold text-[var(--color-fg)] mt-8">Third-party requests</h2>
