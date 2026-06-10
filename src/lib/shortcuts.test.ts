@@ -142,3 +142,70 @@ describe("dispatch", () => {
     expect(dispatch(fakeEvent({ key: "x" }), shortcuts, "active-live")).toBeNull();
   });
 });
+
+describe("dispatch — active-paused context (v0.4.1 Space pause/resume)", () => {
+  const onStop = vi.fn();
+  const onPause = vi.fn();
+  const onPopOut = vi.fn();
+  /**
+   * Mirrors the real CaptionApp.script.ts SHORTCUTS array shape for
+   * v0.4.1: Stop + Pop out remain valid while paused (user can still
+   * fully stop or change PiP state), and Space toggles pause in both
+   * active-live and active-paused.
+   */
+  const shortcuts: Shortcut[] = [
+    {
+      key: "Escape",
+      contexts: ["active-live", "active-paused"],
+      label: "Stop",
+      section: "Capture",
+      handler: onStop,
+    },
+    {
+      key: "Space",
+      contexts: ["active-live", "active-paused"],
+      label: "Pause/Resume",
+      section: "Capture",
+      handler: onPause,
+    },
+    {
+      key: "p",
+      contexts: ["active-live", "active-paused"],
+      label: "Pop out",
+      section: "Window",
+      handler: onPopOut,
+    },
+  ];
+
+  it("matches Space in active-live (toggles to paused)", () => {
+    expect(
+      dispatch(fakeEvent({ key: " " }), shortcuts, "active-live")?.label,
+    ).toBe("Pause/Resume");
+  });
+
+  it("matches Space in active-paused (toggles to live)", () => {
+    expect(
+      dispatch(fakeEvent({ key: " " }), shortcuts, "active-paused")?.label,
+    ).toBe("Pause/Resume");
+  });
+
+  it("does not match Space in idle / loading / active-stopped", () => {
+    expect(dispatch(fakeEvent({ key: " " }), shortcuts, "idle")).toBeNull();
+    expect(dispatch(fakeEvent({ key: " " }), shortcuts, "loading")).toBeNull();
+    expect(
+      dispatch(fakeEvent({ key: " " }), shortcuts, "active-stopped"),
+    ).toBeNull();
+  });
+
+  it("still matches Stop (Escape) in active-paused", () => {
+    expect(
+      dispatch(fakeEvent({ key: "Escape" }), shortcuts, "active-paused")?.label,
+    ).toBe("Stop");
+  });
+
+  it("still matches Pop out (P) in active-paused", () => {
+    expect(
+      dispatch(fakeEvent({ key: "p" }), shortcuts, "active-paused")?.label,
+    ).toBe("Pop out");
+  });
+});

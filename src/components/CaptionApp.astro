@@ -304,6 +304,12 @@
               <span class="size-2 rounded-full bg-[var(--color-rec)] rec-dot"></span>
               <span style="color: var(--color-rec)">LIVE</span>
             </span>
+            {/* Paused indicator (v0.4.1) — visible only in paused substate.
+                Static dot (no pulse animation) so it reads as "frozen". */}
+            <span data-when="paused" class="hidden items-center gap-2 [display:inline-flex]">
+              <span class="size-2 rounded-full bg-[var(--color-fg-muted)]"></span>
+              <span style="color: var(--color-fg-muted)">PAUSED</span>
+            </span>
             {/* Stopped indicator — visible only in stopped substate (after Stop while transcript has content) */}
             <span data-when="stopped" class="hidden items-center gap-2 [display:inline-flex]">
               <span class="size-2 rounded-full bg-[var(--color-fg-subtle)]"></span>
@@ -314,7 +320,7 @@
           <div class="flex items-center gap-1.5 shrink-0">
             <button
               id="cp-pip-btn"
-              data-when="live"
+              data-when="live paused"
               type="button"
               class="text-[10px] uppercase tracking-wider font-semibold px-2.5 py-1 rounded-md bg-[var(--color-surface-strong)] hover:bg-[var(--color-brand)] hover:text-white transition-colors shadow-line"
               title="Toggle floating window"
@@ -334,7 +340,7 @@
               type="button"
               class="text-[10px] uppercase tracking-wider font-semibold px-2.5 py-1 rounded-md bg-[var(--color-surface-strong)] hover:bg-[var(--color-rec)] hover:text-white transition-colors shadow-line"
               title="Stop captioning"
-            ><span data-when="live">Stop</span><span data-when="stopped" class="hidden">Done</span></button>
+            ><span data-when="live paused">Stop</span><span data-when="stopped" class="hidden">Done</span></button>
           </div>
         </header>
 
@@ -444,6 +450,7 @@
         <section>
           <h4 class="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-fg-muted)] mb-2">Capture</h4>
           <ul class="space-y-1">
+            <li class="flex items-center justify-between gap-4"><span>Pause / resume capture</span><kbd class="cp-kbd">Space</kbd></li>
             <li class="flex items-center justify-between gap-4"><span>Stop capture</span><kbd class="cp-kbd">Esc</kbd></li>
           </ul>
         </section>

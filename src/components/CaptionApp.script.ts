@@ -295,6 +295,10 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
   let tickTimer: number | null = null;
   let inFlight = false;
   let nextTickMs = TICK_INTERVAL_MS;
+  /** v0.4.1: paused state for Space pause/resume. When true the tick
+   *  scheduler still re-arms but skips Whisper calls, and the active
+   *  panel switches to the "paused" substate so the header reflects it. */
+  let isPaused = false;
   // Silence tracking — RMS samples come from the capture's onLevel callback.
   // We keep a sliding window of recent RMS values to know "how long has it
   // been quiet?" so we can prevent Whisper from hallucinating on silent audio.
@@ -574,12 +578,14 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
    *  attribute but reading it on every keydown adds overhead. */
   let currentState: AppState = "idle";
 
-  /** Active-panel substate: "live" while captioning, "stopped" after Stop
-   *  when transcript has content (so user can still see history + download).
-   *  Elements with `data-when="live"` / `data-when="stopped"` toggle visibility
-   *  via the `.hidden` class — covers the LIVE/STOPPED indicators, the Stop
-   *  button label swap (Stop → Done), Pop Out (hidden when stopped), and
-   *  the "Start new" button (only visible when stopped).
+  /** Active-panel substate: "live" while captioning, "paused" while
+   *  user has hit Space (v0.4.1), "stopped" after Stop when transcript
+   *  has content (so user can still see history + download).
+   *  Elements with `data-when="..."` toggle visibility via the `.hidden`
+   *  class. v0.4.1 extends this so `data-when` may contain MULTIPLE
+   *  space-separated substates — e.g. `data-when="live paused"` for
+   *  controls that should be visible in both running and paused
+   *  capture (Stop button, Pop out, source label).
    *
    *  IMPORTANT: query from `document`, NOT `rootEl`. The caption-box header
    *  (which contains most of the `data-when` elements) gets physically moved
@@ -589,13 +595,14 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
    *  indicators stuck on whatever they were before PiP opened. This caused
    *  the v0.3.1 regression where "Start new → Start" left the STOPPED label
    *  showing inside PiP. */
-  type Substate = "live" | "stopped";
+  type Substate = "live" | "paused" | "stopped";
   let currentSubstate: Substate = "live";
   function setSubstate(s: Substate) {
     currentSubstate = s;
     rootEl.dataset.substate = s;
     document.querySelectorAll<HTMLElement>("[data-when]").forEach((el) => {
-      el.classList.toggle("hidden", el.dataset.when !== s);
+      const allowed = (el.dataset.when || "").split(/\s+/).filter(Boolean);
+      el.classList.toggle("hidden", !allowed.includes(s));
     });
   }
 
@@ -764,6 +771,13 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
       scheduleNextTick();
       return;
     }
+    // v0.4.1: paused state — skip Whisper call so no new committed text
+    // appears and no GPU/CPU is burned re-transcribing the frozen buffer.
+    // Still re-arm so the scheduler picks up immediately on resume.
+    if (isPaused) {
+      scheduleNextTick();
+      return;
+    }
     if (rolling.durationSeconds() < MIN_AUDIO_SECONDS) {
       scheduleNextTick();
       return;
@@ -858,6 +872,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     rolling.reset();
     agreement.reset();
     nextTickMs = TICK_INTERVAL_MS;
+    isPaused = false; // v0.4.1: fresh session always starts running
     // New session — fresh transcript log.
     transcriptSegments = [];
     sessionStartMs = performance.now();
@@ -1003,6 +1018,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     rolling.reset();
     agreement.reset();
     nextTickMs = TICK_INTERVAL_MS;
+    isPaused = false; // v0.4.1: fresh session always starts running
     transcriptSegments = [];
     sessionStartMs = performance.now();
     currentSessionSource = "sample";
@@ -1094,6 +1110,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     }
     whisperReady = false;
     inFlight = false;
+    isPaused = false; // v0.4.1: stopping clears paused state
     rolling.reset();
     agreement.reset();
     renderLiveLine("");
@@ -1176,17 +1193,63 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
   startBtn.addEventListener("click", () => void startPipeline());
   sampleBtn.addEventListener("click", () => void startSampleSession());
 
-  // ── Keyboard shortcuts (v0.4.0) ──
+  // ── Keyboard shortcuts (v0.4.0 + v0.4.1 Space pause/resume) ──
   function getShortcutContext(): ShortcutContext {
     if (currentState === "loading") return "loading";
     if (currentState === "active") {
-      return currentSubstate === "stopped" ? "active-stopped" : "active-live";
+      if (currentSubstate === "stopped") return "active-stopped";
+      if (currentSubstate === "paused") return "active-paused";
+      return "active-live";
     }
     return "idle";
   }
   function toggleShortcutsHelp() {
     if (shortcutsHelpDialog.open) shortcutsHelpDialog.close();
     else shortcutsHelpDialog.showModal();
+  }
+  /**
+   * v0.4.1: Space pause/resume. Flips isPaused, calls the capture
+   * handle's pause/resume (which suspends/resumes the AudioContext —
+   * worklet stops emitting frames, RollingBuffer freezes), and swaps
+   * substate so the header reflects PAUSED. Safe to invoke from
+   * either the main document or the PiP document (handler is identical
+   * because we install on both via setPipShortcuts).
+   *
+   * No-ops outside the active state — the shortcut contexts in
+   * SHORTCUTS already gate this, but defense-in-depth so an accidental
+   * direct call doesn't desync UI vs capture state.
+   */
+  async function togglePause() {
+    if (currentState !== "active") return;
+    if (!captureHandle) return;
+    if (currentSubstate === "stopped") return; // can't pause a stopped session
+    if (isPaused) {
+      // Resume
+      isPaused = false;
+      setSubstate("live");
+      showCaptionStatus("Listening…");
+      // Hide status banner shortly after — gives the user visual confirm.
+      window.setTimeout(() => {
+        // Don't override a real status (e.g. error / model load) that
+        // landed in the meantime.
+        if (!isPaused) hideCaptionStatus();
+      }, 800);
+      try {
+        await captureHandle.resume();
+      } catch (err) {
+        console.warn("[LiveCaptionIt] resume failed:", err);
+      }
+    } else {
+      // Pause
+      isPaused = true;
+      setSubstate("paused");
+      showCaptionStatus("Paused — press Space to resume");
+      try {
+        await captureHandle.pause();
+      } catch (err) {
+        console.warn("[LiveCaptionIt] pause failed:", err);
+      }
+    }
   }
   const SHORTCUTS: Shortcut[] = [
     {
@@ -1198,14 +1261,21 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     },
     {
       key: "Escape",
-      contexts: ["active-live"],
+      contexts: ["active-live", "active-paused"],
       label: "Stop capture",
       section: "Capture",
       handler: () => stopBtn.click(),
     },
     {
+      key: "Space",
+      contexts: ["active-live", "active-paused"],
+      label: "Pause / resume capture",
+      section: "Capture",
+      handler: () => void togglePause(),
+    },
+    {
       key: "p",
-      contexts: ["active-live"],
+      contexts: ["active-live", "active-paused"],
       label: "Pop out / close pop-out",
       section: "Window",
       handler: () => pipBtn.click(),

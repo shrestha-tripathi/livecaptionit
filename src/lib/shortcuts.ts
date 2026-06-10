@@ -15,7 +15,7 @@
  *    listener.
  */
 
-export type ShortcutContext = "idle" | "loading" | "active-live" | "active-stopped";
+export type ShortcutContext = "idle" | "loading" | "active-live" | "active-paused" | "active-stopped";
 
 export interface Shortcut {
   /** Single key or modifier+key combo (e.g. "Space", "Escape", "?"). */
