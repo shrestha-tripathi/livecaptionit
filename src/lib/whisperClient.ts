@@ -178,7 +178,19 @@ export async function isModelCached(hfId: string): Promise<boolean> {
 
 let _nextId = 1;
 
-export function createWhisperClient(workerUrl = "/whisper-worker.js"): WhisperClient {
+// v0.5.1 — version query string busts stale 7-day-cached workers from
+// pre-v0.5.1 deploys. The previous _headers config served the worker
+// with max-age=604800; users who loaded the page before v0.5.1 shipped
+// would keep getting the OLD worker (missing the mobile WASM fix) for
+// up to a week. Appending ?v=N forces the browser to fetch a "new"
+// URL — bypassing the cached old version entirely. Bump WORKER_VERSION
+// whenever public/whisper-worker.js changes in a way users must pick
+// up immediately. Routine model-registry edits in whisperClient.ts
+// don't need a bump (those live in the page bundle, which has hashed
+// filenames and busts itself).
+const WORKER_VERSION = 2; // v0.5.1: mobile WASM + forceDevice support
+
+export function createWhisperClient(workerUrl = `/whisper-worker.js?v=${WORKER_VERSION}`): WhisperClient {
   const worker = new Worker(workerUrl, { type: "module" });
 
   let statusCb: ((s: WhisperStatus) => void) | null = null;

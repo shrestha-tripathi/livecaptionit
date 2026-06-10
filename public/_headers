@@ -53,9 +53,23 @@ https://*.captionpip.pages.dev/*
 /favicon.svg
   Cache-Control: public, max-age=2592000
 
-# Whisper worker — cache 7 days (model itself is cached separately by browser IndexedDB)
+# Whisper worker — short cache + must-revalidate so critical worker
+# changes (mobile fixes, dtype tweaks, transformers.js version bumps)
+# propagate within ~60s instead of being stuck behind 7-day CDN caches.
+# v0.5.1: lowered from max-age=604800 to 60 + must-revalidate after the
+# mobile-WASM fix took ~7d to reach users with stale cached workers.
+# The model weights themselves are cached separately in browser IndexedDB
+# (transformers.js's env.useBrowserCache) so the byte cost of re-checking
+# this 10 KB worker shim every page-load is negligible.
 /whisper-worker.js
-  Cache-Control: public, max-age=604800
+  Cache-Control: public, max-age=60, must-revalidate
+
+# AudioWorklet processor — same reasoning as whisper-worker.js. The
+# worklet is small (~3 KB) and changes are rare but when they do happen
+# (e.g. the v0.4.1 ScriptProcessor → AudioWorklet migration) they need
+# to land instantly, not after a 4h CDN TTL.
+/audio-worklet-capture.js
+  Cache-Control: public, max-age=60, must-revalidate
 
 # Sitemap & robots — short cache so SEO updates ship fast
 /sitemap.xml
