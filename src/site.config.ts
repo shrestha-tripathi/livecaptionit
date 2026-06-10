@@ -44,10 +44,13 @@ export const site = {
   jurisdiction: env.PUBLIC_SITE_JURISDICTION ?? "India",
   locale: env.PUBLIC_SITE_LOCALE ?? "en",
   /**
-   * Google Analytics 4 Measurement ID. Empty disables. PROD-gated in Layout.
-   * Use a separate property per project; do not reuse SCP/HEICPix/FTN IDs.
+   * Google Analytics 4 Measurement ID. PROD-gated in Layout (only injects
+   * the gtag snippet on real deploys, never during local dev or preview
+   * builds). Default is the livecaptionit.com production property. Override
+   * via PUBLIC_GA_MEASUREMENT_ID env var on Cloudflare Pages for a fork.
+   * Set to "" to disable analytics entirely.
    */
-  gaId: env.PUBLIC_GA_MEASUREMENT_ID ?? "",
+  gaId: env.PUBLIC_GA_MEASUREMENT_ID ?? "G-XZPZ13FET6",
 } as const;
 
 export type SiteConfig = typeof site;
