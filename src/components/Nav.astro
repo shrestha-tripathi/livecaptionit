@@ -12,6 +12,10 @@ import ThemeToggle from "./ThemeToggle.astro";
     </a>
     <div class="flex items-center gap-2">
       <a
+        href={b("/blog")}
+        class="hidden sm:inline-flex h-9 items-center px-3 rounded-md text-sm text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] transition-colors"
+      >Blog</a>
+      <a
         href={b("/about")}
         class="hidden sm:inline-flex h-9 items-center px-3 rounded-md text-sm text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] transition-colors"
       >About</a>

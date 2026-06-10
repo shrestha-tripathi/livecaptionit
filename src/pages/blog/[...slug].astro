@@ -1,0 +1,170 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import { getCollection, render } from "astro:content";
+import { site, b } from "../../site.config";
+import { breadcrumb } from "../../lib/breadcrumb";
+
+export async function getStaticPaths() {
+  const posts = await getCollection("blog", ({ data }) => !data.draft);
+  return posts.map((post) => ({ params: { slug: post.id }, props: { post } }));
+}
+
+const { post } = Astro.props;
+const { Content } = await render(post);
+
+const postLd = {
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "@id": `${site.url}/blog/${post.id}#post`,
+  headline: post.data.title,
+  description: post.data.description,
+  datePublished: post.data.pubDate.toISOString(),
+  ...(post.data.updatedDate && { dateModified: post.data.updatedDate.toISOString() }),
+  author: { "@type": "Person", name: site.author },
+  publisher: { "@id": `${site.url}/#organization` },
+  mainEntityOfPage: { "@type": "WebPage", "@id": `${site.url}/blog/${post.id}` },
+  keywords: post.data.tags.join(", "),
+};
+
+const bc = breadcrumb(
+  { name: "Blog", path: "/blog" },
+  { name: post.data.title, path: `/blog/${post.id}` },
+);
+
+const fmt = (d: Date) =>
+  d.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+---
+
+<Layout title={post.data.title} description={post.data.description} jsonLd={[postLd, bc]}>
+  <main class="max-w-3xl mx-auto px-4 sm:px-6 py-12 sm:py-16">
+    <p class="text-xs text-[var(--color-fg-subtle)] mb-3">
+      <a href={b("/")} class="hover:text-[var(--color-fg)]">{site.name}</a>
+      <span class="mx-1.5">/</span>
+      <a href={b("/blog")} class="hover:text-[var(--color-fg)]">Blog</a>
+    </p>
+
+    <header class="mb-10">
+      <h1 class="text-3xl sm:text-4xl font-bold tracking-tight mb-3">{post.data.title}</h1>
+      <p class="text-xs text-[var(--color-fg-subtle)]">
+        {fmt(post.data.pubDate)}
+        {post.data.tags.length > 0 && (
+          <>
+            <span class="mx-1.5">·</span>
+            {post.data.tags.map((t, i) => (
+              <>{i > 0 && <span class="mx-1">·</span>}<span>{t}</span></>
+            ))}
+          </>
+        )}
+      </p>
+    </header>
+
+    <article class="prose-body">
+      <Content />
+    </article>
+
+    <section class="mt-16 p-6 rounded-xl bg-[var(--color-surface)] shadow-line">
+      <h2 class="text-xl font-bold mb-2">Try {site.name}</h2>
+      <p class="text-sm text-[var(--color-fg-muted)] mb-4">
+        Free live captions for any tab. Floats over anything. Audio processed
+        locally. Never uploads.
+      </p>
+      <a
+        href={b("/")}
+        class="inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold bg-[var(--color-brand)] text-white hover:bg-[var(--color-brand-strong)] transition-colors shadow-line"
+      >
+        Open {site.name} →
+      </a>
+    </section>
+  </main>
+</Layout>
+
+<style>
+  /* Prose styling without @tailwindcss/typography — keep bundle tight. */
+  .prose-body :global(h2) {
+    font-size: 1.875rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+    color: var(--color-fg);
+    margin-top: 3rem;
+    margin-bottom: 1rem;
+  }
+  .prose-body :global(h3) {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--color-fg);
+    margin-top: 2rem;
+    margin-bottom: 0.6rem;
+  }
+  .prose-body :global(p) {
+    color: var(--color-fg-muted);
+    line-height: 1.7;
+    margin-bottom: 1.25rem;
+  }
+  .prose-body :global(ul) {
+    list-style: disc;
+    padding-left: 1.5rem;
+    color: var(--color-fg-muted);
+    margin-bottom: 1.25rem;
+  }
+  .prose-body :global(ol) {
+    list-style: decimal;
+    padding-left: 1.5rem;
+    color: var(--color-fg-muted);
+    margin-bottom: 1.25rem;
+  }
+  .prose-body :global(li) {
+    margin-bottom: 0.4rem;
+  }
+  .prose-body :global(strong) {
+    color: var(--color-fg);
+    font-weight: 600;
+  }
+  .prose-body :global(a) {
+    color: var(--color-brand-strong);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .prose-body :global(code) {
+    font-family: ui-monospace, "Geist Mono", "SF Mono", Menlo, monospace;
+    font-size: 0.875em;
+    color: var(--color-fg);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    padding: 1px 5px;
+  }
+  .prose-body :global(pre) {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 1.25rem;
+    margin: 1.5rem 0;
+    overflow-x: auto;
+    font-size: 0.875rem;
+  }
+  .prose-body :global(blockquote) {
+    border-left: 3px solid var(--color-brand);
+    padding-left: 1rem;
+    margin: 1.5rem 0;
+    color: var(--color-fg-muted);
+    font-style: italic;
+  }
+  .prose-body :global(table) {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1.5rem 0;
+    font-size: 0.9rem;
+  }
+  .prose-body :global(th),
+  .prose-body :global(td) {
+    border: 1px solid var(--color-border);
+    padding: 0.6rem 0.85rem;
+    text-align: left;
+  }
+  .prose-body :global(th) {
+    background: var(--color-surface);
+    color: var(--color-fg);
+    font-weight: 600;
+  }
+</style>

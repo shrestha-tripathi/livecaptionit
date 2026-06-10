@@ -3,26 +3,105 @@ import { site, b } from "../site.config";
 import BrandIcon from "./BrandIcon.astro";
 
 const year = new Date().getFullYear();
+
+interface FooterLink {
+  label: string;
+  href: string;
+  external?: boolean;
+}
+
+const product: FooterLink[] = [
+  { label: "Live captions", href: b("/") },
+  { label: "YouTube videos", href: b("/youtube-captions") },
+  { label: "Video meetings", href: b("/meeting-captions") },
+  { label: "Podcasts", href: b("/podcast-captions") },
+  { label: "Lectures & MOOCs", href: b("/lecture-captions") },
+  { label: "Install as an app", href: b("/install") },
+];
+
+const platforms: FooterLink[] = [
+  { label: "Zoom captions", href: b("/captions-for-zoom") },
+  { label: "Google Meet captions", href: b("/captions-for-google-meet") },
+  { label: "Blog", href: b("/blog") },
+];
+
+const company: FooterLink[] = [
+  { label: "About", href: b("/about") },
+  { label: "Contact", href: b("/contact") },
+];
+
+const legal: FooterLink[] = [
+  { label: "Privacy", href: b("/privacy") },
+  { label: "Terms", href: b("/terms") },
+  { label: "Disclaimer", href: b("/disclaimer") },
+];
+
+if (site.githubUrl) {
+  company.push({ label: "GitHub", href: site.githubUrl, external: true });
+}
 ---
 
-<footer class="mt-24 py-10">
+<footer class="mt-24 pt-10 pb-12 border-t border-[var(--color-border)]/40">
   <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-    <div class="flex flex-col sm:flex-row gap-6 sm:gap-12 sm:items-start">
-      <div class="flex items-center gap-2 text-[var(--color-fg)]">
-        <BrandIcon size={22} />
-        <span class="font-semibold tracking-tight text-sm">{site.shortName}</span>
+    {/* Brand mark + tagline */}
+    <div class="flex items-center gap-2 text-[var(--color-fg)] mb-8">
+      <BrandIcon size={22} />
+      <span class="font-semibold tracking-tight text-sm">{site.shortName}</span>
+    </div>
+
+    {/* 4-column link grid */}
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-8">
+      <div>
+        <p class="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-fg-muted)] mb-3">Product</p>
+        <ul class="space-y-1.5 text-sm">
+          {product.map((l) => (
+            <li>
+              <a href={l.href} class="text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] transition-colors">{l.label}</a>
+            </li>
+          ))}
+        </ul>
       </div>
-      <div class="flex flex-wrap gap-x-5 gap-y-2 text-sm">
-        <a href={b("/about")} class="text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] transition-colors">About</a>
-        <a href={b("/privacy")} class="text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] transition-colors">Privacy</a>
-        <a href={b("/terms")} class="text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] transition-colors">Terms</a>
-        <a href={b("/contact")} class="text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] transition-colors">Contact</a>
-        <a href={b("/disclaimer")} class="text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] transition-colors">Disclaimer</a>
-        {site.githubUrl && <a href={site.githubUrl} target="_blank" rel="noopener noreferrer" class="text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] transition-colors">GitHub</a>}
+      <div>
+        <p class="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-fg-muted)] mb-3">Platforms</p>
+        <ul class="space-y-1.5 text-sm">
+          {platforms.map((l) => (
+            <li>
+              <a href={l.href} class="text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] transition-colors">{l.label}</a>
+            </li>
+          ))}
+        </ul>
+      </div>
+      <div>
+        <p class="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-fg-muted)] mb-3">Company</p>
+        <ul class="space-y-1.5 text-sm">
+          {company.map((l) => (
+            <li>
+              <a
+                href={l.href}
+                class="text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] transition-colors"
+                {...(l.external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+              >{l.label}</a>
+            </li>
+          ))}
+        </ul>
+      </div>
+      <div>
+        <p class="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-fg-muted)] mb-3">Legal</p>
+        <ul class="space-y-1.5 text-sm">
+          {legal.map((l) => (
+            <li>
+              <a href={l.href} class="text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] transition-colors">{l.label}</a>
+            </li>
+          ))}
+        </ul>
       </div>
     </div>
-    <p class="mt-6 text-xs text-[var(--color-fg-subtle)]">
-      © {year} {site.author} · {site.name} runs Whisper locally in your browser via WebGPU. Audio never uploads.
+
+    {/* Legal microcopy */}
+    <p class="mt-10 text-xs text-[var(--color-fg-subtle)] leading-relaxed">
+      © {year} {site.author} · {site.name} runs Whisper locally in your
+      browser via WebGPU. Audio never uploads. {site.name} is operated
+      from {site.jurisdiction}.
     </p>
   </div>
 </footer>

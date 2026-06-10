@@ -1,0 +1,175 @@
+---
+import Layout from "../layouts/Layout.astro";
+import { site, b } from "../site.config";
+import { breadcrumb } from "../lib/breadcrumb";
+
+const howToLd = {
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  name: `Install ${site.name} as an app on Android, iOS, or desktop`,
+  description: `Step-by-step guide to install ${site.name} as a Progressive Web App. No app store, no download, takes ~5 seconds.`,
+  totalTime: "PT1M",
+  step: [
+    {
+      "@type": "HowToStep",
+      position: 1,
+      name: "Open the site in your browser",
+      text: `Visit ${site.domain} in Chrome, Edge, Brave, or Safari (any modern browser).`,
+    },
+    {
+      "@type": "HowToStep",
+      position: 2,
+      name: "Look for the install pill or browser prompt",
+      text: "On Chrome/Edge/Brave a centered install pill appears on the home page. On iOS Safari, tap the Share icon → Add to Home Screen.",
+    },
+    {
+      "@type": "HowToStep",
+      position: 3,
+      name: "Confirm and install",
+      text: "Click Install (desktop) or Add (mobile). Installed in ~5 seconds — no app store, no download.",
+    },
+    {
+      "@type": "HowToStep",
+      position: 4,
+      name: "Open the new app icon",
+      text: "Find the app in Start menu / Applications / Home Screen. Opens in its own window without browser chrome — the floating PiP feels like a native overlay app.",
+    },
+  ],
+};
+
+const bc = breadcrumb({ name: "Install as an app", path: "/install" });
+---
+
+<Layout
+  title={`Install ${site.name} — add as an app, no store needed`}
+  description={`Install ${site.name} as a Progressive Web App on Android, iOS, Windows, Mac, or Linux. No app store, no download, ~5 seconds. Updates automatically.`}
+  jsonLd={[howToLd, bc]}
+>
+  <main class="max-w-3xl mx-auto px-4 sm:px-6 py-12 sm:py-16">
+    <p class="text-xs text-[var(--color-fg-subtle)] mb-3">
+      <a href={b("/")} class="hover:text-[var(--color-fg)]">{site.name}</a>
+      <span class="mx-1.5">/</span>
+      <span>Install as an app</span>
+    </p>
+
+    <h1 class="text-4xl sm:text-5xl font-bold tracking-tight mb-4">
+      Install {site.name}.
+    </h1>
+    <p class="text-lg text-[var(--color-fg-muted)] mb-8">
+      No app store. No download. One tap. {site.name} is a Progressive Web
+      App — adds an icon to your Start menu / Applications / Home Screen
+      and opens in its own window without browser chrome. Installed size:
+      ~2 MB.
+    </p>
+
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-12">
+      {[
+        { label: "~5 second install", icon: "⚡" },
+        { label: "No permissions asked", icon: "🔐" },
+        { label: "Auto-updates", icon: "♻️" },
+        { label: "~2 MB total", icon: "🪶" },
+      ].map((c) => (
+        <div class="flex items-center gap-2 p-3 rounded-md bg-[var(--color-surface)] shadow-line">
+          <span class="text-base" aria-hidden="true">{c.icon}</span>
+          <span class="text-xs text-[var(--color-fg-muted)]">{c.label}</span>
+        </div>
+      ))}
+    </div>
+
+    <section class="mb-12">
+      <h2 class="text-2xl font-bold mb-6">How to install</h2>
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {/* Android */}
+        <div class="p-5 rounded-xl bg-[var(--color-surface)] shadow-line">
+          <div class="flex items-center gap-2 mb-3">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" class="text-[var(--color-brand-strong)]"><path d="M17.523 15.34a1.122 1.122 0 1 1 0 2.244 1.122 1.122 0 0 1 0-2.244zm-11.046 0a1.122 1.122 0 1 1 0 2.244 1.122 1.122 0 0 1 0-2.244zm11.444-6.27 1.998-3.46a.418.418 0 0 0-.722-.42L17.179 8.7a12.78 12.78 0 0 0-10.358 0L4.803 5.19a.418.418 0 0 0-.722.42l1.998 3.46C2.62 10.901.404 14.42 0 18.5h24c-.404-4.08-2.62-7.599-6.079-9.43z"/></svg>
+            <p class="font-semibold text-sm">Android</p>
+          </div>
+          <ol class="text-xs text-[var(--color-fg-muted)] space-y-2 list-decimal pl-4">
+            <li>Open {site.domain} in Chrome, Edge, Brave, or Samsung Internet.</li>
+            <li>Tap the "Install" pill that appears on the home page.</li>
+            <li>Confirm in the prompt. The app icon lands on your Home Screen.</li>
+            <li>Open the icon — it launches in its own window, no browser bar.</li>
+          </ol>
+          <p class="mt-3 text-[10px] text-[var(--color-fg-subtle)] leading-snug">
+            Tip: long-press the icon → Add to Home Screen if you want it on a specific page.
+          </p>
+        </div>
+
+        {/* iOS */}
+        <div class="p-5 rounded-xl bg-[var(--color-surface)] shadow-line">
+          <div class="flex items-center gap-2 mb-3">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" class="text-[var(--color-brand-strong)]"><path d="M19.665 16.811a10.316 10.316 0 0 1-1.021 1.837c-.537.767-.978 1.297-1.316 1.592-.525.482-1.089.73-1.692.744-.432 0-.954-.123-1.562-.373-.61-.249-1.17-.371-1.683-.371-.537 0-1.113.122-1.73.371-.616.25-1.114.381-1.495.393-.577.025-1.154-.229-1.729-.764-.367-.319-.826-.873-1.377-1.665-.59-.85-1.075-1.834-1.451-2.957-.405-1.211-.611-2.387-.611-3.522 0-1.301.282-2.423.846-3.36a4.954 4.954 0 0 1 1.778-1.788 4.852 4.852 0 0 1 2.398-.677c.461 0 1.066.143 1.815.421.747.279 1.226.421 1.434.421.156 0 .689-.166 1.595-.499.857-.305 1.587-.434 2.181-.387 1.61.129 2.819.752 3.622 1.866-1.438.872-2.155 2.094-2.142 3.665.013 1.215.453 2.226 1.317 3.026.395.378.836.674 1.322.886-.103.298-.215.581-.336.851zM15.998 2.38c0 .969-.354 1.875-1.061 2.715-.853 1-1.881 1.578-2.998 1.488a3.018 3.018 0 0 1-.022-.37c0-.929.405-1.928 1.122-2.74.357-.412.812-.751 1.362-1.018.549-.265 1.069-.413 1.559-.439.014.122.038.244.038.364z"/></svg>
+            <p class="font-semibold text-sm">iOS / iPadOS</p>
+          </div>
+          <ol class="text-xs text-[var(--color-fg-muted)] space-y-2 list-decimal pl-4">
+            <li>Open {site.domain} in Safari (NOT Chrome on iOS — Chrome on iOS uses Safari under the hood but the Add-to-Home-Screen flow is Safari's).</li>
+            <li>Tap the Share icon at the bottom (square with up arrow).</li>
+            <li>Scroll the share sheet → Add to Home Screen.</li>
+            <li>Confirm. App icon lands on your Home Screen.</li>
+          </ol>
+          <p class="mt-3 text-[10px] text-[var(--color-fg-subtle)] leading-snug">
+            Note: floating PiP isn't supported on iOS Safari. Captions render inline on the page.
+          </p>
+        </div>
+
+        {/* Desktop */}
+        <div class="p-5 rounded-xl bg-[var(--color-surface)] shadow-line">
+          <div class="flex items-center gap-2 mb-3">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-[var(--color-brand-strong)]"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            <p class="font-semibold text-sm">Windows / Mac / Linux</p>
+          </div>
+          <ol class="text-xs text-[var(--color-fg-muted)] space-y-2 list-decimal pl-4">
+            <li>Open {site.domain} in Chrome, Edge, Brave, or Arc.</li>
+            <li>Click the "Install" pill on the home page (or the install icon in the URL bar — looks like a monitor with a down arrow).</li>
+            <li>Confirm. App lands in Start menu (Windows) / Applications (Mac) / app drawer (Linux).</li>
+            <li>Open the new app — runs in its own window, the PiP captions float over any other app.</li>
+          </ol>
+          <p class="mt-3 text-[10px] text-[var(--color-fg-subtle)] leading-snug">
+            Pin it to your taskbar / dock for one-click access during meetings.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="mb-12">
+      <h2 class="text-2xl font-bold mb-4">We could ship a native app. We chose not to.</h2>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div class="p-5 rounded-xl bg-[var(--color-surface)] shadow-line">
+          <p class="text-xs uppercase tracking-wider font-semibold text-[var(--color-fg-muted)] mb-2">Native app pain</p>
+          <ul class="space-y-1.5 text-sm text-[var(--color-fg-muted)]">
+            <li>✗ Days-to-weeks of app store review queue</li>
+            <li>✗ 30–100 MB install on Android, 50+ MB on iOS</li>
+            <li>✗ Separate codebases per platform</li>
+            <li>✗ Manual updates pushed by users</li>
+            <li>✗ Tracking / permissions sprawl</li>
+          </ul>
+        </div>
+        <div class="p-5 rounded-xl bg-[var(--color-surface)] shadow-line border border-[var(--color-brand)]/30">
+          <p class="text-xs uppercase tracking-wider font-semibold text-[var(--color-brand-strong)] mb-2">PWA wins</p>
+          <ul class="space-y-1.5 text-sm text-[var(--color-fg-muted)]">
+            <li>✓ Ships in seconds, no review</li>
+            <li>✓ ~2 MB install footprint</li>
+            <li>✓ Same code as the website</li>
+            <li>✓ Auto-update when you visit</li>
+            <li>✓ No tracking, no spurious permissions</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="mb-12 p-6 rounded-xl bg-[var(--color-surface)] shadow-line">
+      <h2 class="text-xl font-bold mb-2">Ready to install?</h2>
+      <p class="text-sm text-[var(--color-fg-muted)] mb-4">
+        Open {site.name} on the device you want it on. The install pill
+        appears automatically on the home page.
+      </p>
+      <a
+        href={b("/")}
+        class="inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold bg-[var(--color-brand)] text-white hover:bg-[var(--color-brand-strong)] transition-colors shadow-line"
+      >
+        Open {site.name} →
+      </a>
+    </section>
+  </main>
+</Layout>

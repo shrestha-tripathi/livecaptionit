@@ -1,0 +1,190 @@
+---
+import Layout from "../layouts/Layout.astro";
+import { site, b } from "../site.config";
+import { breadcrumb } from "../lib/breadcrumb";
+
+const howToLd = {
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  name: `How to add free live captions to a Zoom meeting with ${site.name}`,
+  description:
+    "Free live captions for Zoom meetings on any plan — no Zoom Pro required. Captions float in a Picture-in-Picture window above the meeting itself.",
+  totalTime: "PT30S",
+  step: [
+    {
+      "@type": "HowToStep",
+      position: 1,
+      name: "Join the Zoom meeting in the browser",
+      text: "Go to zoom.us/wc/<meeting-id> in Chrome / Edge / Brave to join via the Web client. (Native Zoom desktop app can't be captioned because the audio plays outside the browser.)",
+    },
+    {
+      "@type": "HowToStep",
+      position: 2,
+      name: `Open ${site.name} in another tab`,
+      text: `Visit ${site.domain} in a separate tab. Click "Start captions".`,
+    },
+    {
+      "@type": "HowToStep",
+      position: 3,
+      name: "Share the Zoom tab with audio",
+      text: "When the browser picker opens, pick your Zoom tab and tick 'Share tab audio' at the bottom. Without it, only video is shared, no audio.",
+    },
+    {
+      "@type": "HowToStep",
+      position: 4,
+      name: "Switch back to Zoom",
+      text: "A floating PiP caption window appears. Switch back to the Zoom tab. Captions update in real time. The floating window stays visible no matter which app you switch to.",
+    },
+  ],
+};
+
+const faqLd = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: [
+    {
+      "@type": "Question",
+      name: "Why use this instead of Zoom's own captions?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: `<p>Zoom's built-in captions require a paid plan for most account types (Pro, Business, Enterprise) and even then only work in certain regions. ${site.name} is free, works on any Zoom plan (including the free Basic tier), and adds the floating Picture-in-Picture window that Zoom's native captions don't offer.</p>`,
+      },
+    },
+    {
+      "@type": "Question",
+      name: "Does Zoom know I'm using third-party captions?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: `<p>No. ${site.name} runs entirely in your own browser tab — Zoom sees no different activity from a normal participant. There's no plugin, no API call, no bot joining the meeting. Your audio is captured by Chrome's tab capture API (the same API that powers screen sharing) and processed locally on your device.</p>`,
+      },
+    },
+    {
+      "@type": "Question",
+      name: "Can I caption Zoom meetings from the Zoom desktop app?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: `<p>Not directly — the desktop app plays audio outside the browser, so Chrome's tab capture can't see it. Workaround: use Zoom's Web client (zoom.us/wc/&lt;meeting-id&gt;) instead. Same meeting, browser-rendered, captions work. On Windows you can also pick "Entire screen" in the source picker, which captures system audio including the desktop Zoom app.</p>`,
+      },
+    },
+    {
+      "@type": "Question",
+      name: "Will the captions cover the meeting video?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: `<p>The floating Picture-in-Picture window is draggable and resizable — put it anywhere on your screen. Make it small and tuck in a corner, or wide and edge-to-edge for a subtitle-bar look. Opacity is adjustable (down to ~40%) so you can see through it to the video underneath when needed.</p>`,
+      },
+    },
+    {
+      "@type": "Question",
+      name: "Will the meeting recording include the captions?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: `<p>No. Zoom records its own audio + video + native captions (if enabled on your plan). ${site.name}'s captions live only on your screen — not in the Zoom recording. To save them, click Stop in ${site.name} and download the transcript as .txt / .vtt / .srt — the last 20 sessions are also auto-saved to your browser.</p>`,
+      },
+    },
+  ],
+};
+
+const bc = breadcrumb({ name: "Live captions for Zoom", path: "/captions-for-zoom" });
+---
+
+<Layout
+  title="Free live captions for Zoom meetings — no Pro plan needed"
+  description={`Free live captions for Zoom meetings on any plan, including free tier. Captions float in a Picture-in-Picture window above the meeting. Nothing uploads. No Zoom Pro required.`}
+  jsonLd={[howToLd, faqLd, bc]}
+>
+  <main class="max-w-3xl mx-auto px-4 sm:px-6 py-12 sm:py-16">
+    <p class="text-xs text-[var(--color-fg-subtle)] mb-3">
+      <a href={b("/")} class="hover:text-[var(--color-fg)]">{site.name}</a>
+      <span class="mx-1.5">/</span>
+      <span>Live captions for Zoom</span>
+    </p>
+
+    <h1 class="text-4xl sm:text-5xl font-bold tracking-tight mb-4">
+      Free live captions for Zoom — any plan.
+    </h1>
+    <p class="text-lg text-[var(--color-fg-muted)] mb-8">
+      Skip Zoom Pro. Caption any Zoom Web meeting in your browser — captions
+      float in a Picture-in-Picture window above the Zoom call itself.
+      Free, no signup, audio never uploads. Works on Zoom Basic (free) tier
+      too.
+    </p>
+
+    <div class="mb-12">
+      <a
+        href={b("/")}
+        class="brand-halo inline-flex items-center gap-2 px-6 py-3 rounded-full text-base font-semibold bg-[var(--color-brand)] text-white hover:bg-[var(--color-brand-strong)] transition-colors shadow-line"
+      >
+        Start captioning →
+      </a>
+      <p class="mt-3 text-xs text-[var(--color-fg-subtle)]">
+        Free · no signup · invisible to the meeting
+      </p>
+    </div>
+
+    <section class="mb-12">
+      <h2 class="text-2xl font-bold mb-4">Step-by-step</h2>
+      <ol class="space-y-4">
+        {howToLd.step.map((s, i) => (
+          <li class="flex gap-4">
+            <span class="shrink-0 size-7 grid place-items-center rounded-full bg-[var(--color-brand)] text-white font-bold text-sm">{i + 1}</span>
+            <div>
+              <p class="font-semibold text-[var(--color-fg)]">{s.name}</p>
+              <p class="mt-1 text-sm text-[var(--color-fg-muted)] leading-relaxed">{s.text}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </section>
+
+    <section class="mb-12">
+      <h2 class="text-2xl font-bold mb-4">Zoom captions vs {site.name}</h2>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-[var(--color-border)]">
+              <th class="text-left p-3 font-semibold text-[var(--color-fg-muted)]"> </th>
+              <th class="text-left p-3 font-semibold text-[var(--color-fg-muted)]">Zoom built-in</th>
+              <th class="text-left p-3 font-semibold text-[var(--color-brand-strong)]">{site.name}</th>
+            </tr>
+          </thead>
+          <tbody class="text-[var(--color-fg-muted)]">
+            <tr class="border-b border-[var(--color-border)]"><td class="p-3 font-medium text-[var(--color-fg)]">Cost</td><td class="p-3">Paid plan required (most regions)</td><td class="p-3 text-[var(--color-fg)]">Free</td></tr>
+            <tr class="border-b border-[var(--color-border)]"><td class="p-3 font-medium text-[var(--color-fg)]">Floating window</td><td class="p-3">✗ Locked to meeting</td><td class="p-3 text-[var(--color-fg)]">✓ PiP, any app</td></tr>
+            <tr class="border-b border-[var(--color-border)]"><td class="p-3 font-medium text-[var(--color-fg)]">Privacy</td><td class="p-3">Sent to Zoom's servers</td><td class="p-3 text-[var(--color-fg)]">Local-only, no upload</td></tr>
+            <tr class="border-b border-[var(--color-border)]"><td class="p-3 font-medium text-[var(--color-fg)]">Languages</td><td class="p-3">~10 (varies by plan)</td><td class="p-3 text-[var(--color-fg)]">99 (Whisper)</td></tr>
+            <tr><td class="p-3 font-medium text-[var(--color-fg)]">Transcript download</td><td class="p-3">Plan-dependent</td><td class="p-3 text-[var(--color-fg)]">Always (.txt/.vtt/.srt)</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="mb-12">
+      <h2 class="text-2xl font-bold mb-4">Common questions</h2>
+      <div class="space-y-2">
+        {faqLd.mainEntity.map((q) => (
+          <details class="group bg-[var(--color-surface)] rounded-md px-4 py-3 shadow-line">
+            <summary class="cursor-pointer font-semibold text-[var(--color-fg)] flex items-center justify-between gap-3">
+              <span>{q.name}</span>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" class="group-open:rotate-180 transition-transform"><polyline points="6 9 12 15 18 9" /></svg>
+            </summary>
+            <div class="mt-2 text-sm text-[var(--color-fg-muted)] [&_p]:mt-2 [&_p:first-child]:mt-0" set:html={q.acceptedAnswer.text}></div>
+          </details>
+        ))}
+      </div>
+    </section>
+
+    <section class="mb-12 p-6 rounded-xl bg-[var(--color-surface)] shadow-line">
+      <h2 class="text-xl font-bold mb-2">Caption your next Zoom call</h2>
+      <p class="text-sm text-[var(--color-fg-muted)] mb-4">
+        Works on any Zoom plan. Invisible to the meeting. Audio never uploads.
+      </p>
+      <a
+        href={b("/")}
+        class="inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold bg-[var(--color-brand)] text-white hover:bg-[var(--color-brand-strong)] transition-colors shadow-line"
+      >
+        Open {site.name} →
+      </a>
+    </section>
+  </main>
+</Layout>
