@@ -57,6 +57,7 @@ import { searchSessions, debounce } from "../lib/sessionSearch";
 import { toast } from "../lib/toast";
 import { initErrorMonitor, recordError } from "../lib/errorMonitor";
 import { initPwaInstall } from "../lib/pwaInstall";
+import { initOnboardingTour, startTour } from "../lib/onboardingTour";
 import {
   createWhisperClient,
   AVAILABLE_MODELS,
@@ -262,6 +263,10 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
   // (registers `beforeinstallprompt` / `appinstalled` listeners, no DOM reads).
   initPwaInstall();
 
+  // v0.4.3: First-run onboarding tour. Auto-starts only if never seen.
+  // Exposes window.__lcResetTour() for debugging.
+  initOnboardingTour();
+
   const root = document.getElementById("caption-app");
   if (!root) return;
   // Narrow for closures: capture as non-null after the guard
@@ -313,6 +318,13 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
   const dlTxtBtn = rootEl.querySelector<HTMLButtonElement>("#cp-dl-txt")!;
   // Shortcuts dialog lives at the section root, not inside .cp-active panel.
   const shortcutsHelpDialog = rootEl.querySelector<HTMLDialogElement>("#cp-shortcuts-help")!;
+  // v0.4.3 — replay-tour button inside the shortcuts dialog
+  const replayTourBtn = rootEl.querySelector<HTMLButtonElement>("#cp-replay-tour-btn");
+  replayTourBtn?.addEventListener("click", () => {
+    shortcutsHelpDialog.close();
+    // Delay slightly so the modal close animation finishes before the tour opens.
+    setTimeout(() => startTour({ force: true }), 200);
+  });
   // v0.4.0 — session history UI refs
   const historyPanel = rootEl.querySelector<HTMLDivElement>("#cp-history-panel")!;
   const historyList = rootEl.querySelector<HTMLUListElement>("#cp-history-list")!;
