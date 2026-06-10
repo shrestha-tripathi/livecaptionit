@@ -3,6 +3,8 @@
  * a Promise-based API + EventTarget-style callbacks.
  */
 
+import { coerceWords, type Word } from "./word";
+
 export type WhisperStatus =
   | { type: "idle" }
   | { type: "loading"; message: string; progress?: number }
@@ -15,12 +17,36 @@ export interface WindowResult {
   durationMs: number;
 }
 
+/**
+ * v0.4.8 — richer result shape including per-word timing. This is the shape
+ * v0.5 features (sentence-grouped .vtt, confidence-coloured live tail,
+ * transcript editor) consume. Use {@link WhisperClient.transcribeWindow2}
+ * to access it; the legacy {@link WhisperClient.transcribeWindow} continues
+ * to return the text-only shape for callers that haven't migrated yet.
+ *
+ * `chunks` may be empty if the worker is running with an older
+ * transformers.js version that doesn't honor return_timestamps:"word",
+ * or if the audio window was silent. Consumers must handle [] gracefully.
+ */
+export interface WindowResult2 {
+  text: string;
+  chunks: Word[];
+  durationMs: number;
+}
+
 export interface WhisperClient {
   init: (model?: string) => Promise<{ model: string; device: "webgpu" | "wasm" }>;
   /** Single-shot transcription. Returns text only (legacy v0.1 API). */
   transcribe: (audio: Float32Array) => Promise<string>;
   /** Streaming transcription. Returns text + wall-clock inference duration. */
   transcribeWindow: (audio: Float32Array) => Promise<WindowResult>;
+  /**
+   * v0.4.8 — streaming transcription with per-word timing. Parallel API to
+   * {@link transcribeWindow} that exposes the new richer shape. The two
+   * methods share the same underlying worker call — calling either incurs
+   * exactly one decode (no double work).
+   */
+  transcribeWindow2: (audio: Float32Array) => Promise<WindowResult2>;
   /** v0.4.3 — bias decoder toward custom vocabulary. Pass an empty
    *  string to clear. Capped at 200 chars worker-side. Safe to call
    *  before init() or mid-session. */
@@ -127,9 +153,13 @@ export function createWhisperClient(workerUrl = "/whisper-worker.js"): WhisperCl
   let statusCb: ((s: WhisperStatus) => void) | null = null;
   let initResolve: ((r: { model: string; device: "webgpu" | "wasm" }) => void) | null = null;
   let initReject: ((e: Error) => void) | null = null;
+  // v0.4.8 — pending always stores the full rich payload (WindowResult2).
+  // The legacy transcribeWindow() API just strips chunks before returning.
+  // This means a single worker decode services both APIs (no double work)
+  // and we don't need a discriminator on the pending entry.
   const pending = new Map<
     number,
-    { resolve: (r: WindowResult) => void; reject: (e: Error) => void }
+    { resolve: (r: WindowResult2) => void; reject: (e: Error) => void }
   >();
 
   worker.onerror = (e) => {
@@ -153,6 +183,7 @@ export function createWhisperClient(workerUrl = "/whisper-worker.js"): WhisperCl
         if (id !== undefined && pending.has(id)) {
           pending.get(id)!.resolve({
             text: data.text ?? "",
+            chunks: coerceWords(data.chunks),
             durationMs: typeof data.durationMs === "number" ? data.durationMs : 0,
           });
           pending.delete(id);
@@ -187,8 +218,15 @@ export function createWhisperClient(workerUrl = "/whisper-worker.js"): WhisperCl
       const r = await client.transcribeWindow(audio);
       return r.text;
     },
-    transcribeWindow(audio: Float32Array) {
-      return new Promise<WindowResult>((resolve, reject) => {
+    async transcribeWindow(audio: Float32Array): Promise<WindowResult> {
+      // Legacy text-only API — implemented on top of transcribeWindow2 so
+      // both share a single worker call. Callers that don't need chunks
+      // pay no cost beyond the postMessage discard of the extra array.
+      const r = await client.transcribeWindow2(audio);
+      return { text: r.text, durationMs: r.durationMs };
+    },
+    transcribeWindow2(audio: Float32Array) {
+      return new Promise<WindowResult2>((resolve, reject) => {
         const id = _nextId++;
         pending.set(id, { resolve, reject });
         // Transferable: surrender ownership of buffer to worker for zero-copy
