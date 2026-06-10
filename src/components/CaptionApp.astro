@@ -520,8 +520,27 @@
           title="Clear transcript and return to start screen"
         >Clear</button>
       </div>
-      <p class="text-[10px] text-[var(--color-fg-subtle)]">
-        Timestamps are segment-level (~600-1200ms granularity), not word-level.
+      {/* v0.5 commit 6 — cue granularity radio for .vtt/.srt exports.
+          Hidden by script until a session has v2 segments (per-word
+          timing); for v1 transcripts the segment-level fallback is the
+          only sensible choice and showing the radio would be misleading. */}
+      <div id="cp-export-granularity-wrap" class="hidden inline-flex items-center gap-2 mt-1">
+        <span class="text-[10px] text-[var(--color-fg-muted)] uppercase tracking-wider">.vtt/.srt cues:</span>
+        <label class="cp-segment-radio">
+          <input type="radio" name="cp-export-granularity" value="segment" />
+          <span title="One cue per agreement-tick batch (~600-1200ms). Coarse but cheap. Matches v0.4.x behaviour.">Segment</span>
+        </label>
+        <label class="cp-segment-radio">
+          <input type="radio" name="cp-export-granularity" value="sentence" checked />
+          <span title="Group at punctuation (.!?) with ≤4s soft target, 10s hard break, and silence-gap detection. Best for actual subtitling.">Sentence</span>
+        </label>
+        <label class="cp-segment-radio">
+          <input type="radio" name="cp-export-granularity" value="word" />
+          <span title="One cue per word. Useful for karaoke-style highlighting in custom players. Produces large .vtt files.">Word</span>
+        </label>
+      </div>
+      <p id="cp-export-granularity-note" class="text-[10px] text-[var(--color-fg-subtle)]">
+        Per-word timestamps available for sessions recorded in v0.5+. Older sessions fall back to segment-level cues.
       </p>
     </div>
   </div>

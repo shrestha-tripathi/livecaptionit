@@ -98,7 +98,10 @@ import {
   formatSrt,
   defaultFilename,
   downloadString,
+  isV2Segment,
+  type AnyTranscriptSegment,
   type TranscriptSegment2,
+  type ExportGranularity,
 } from "../lib/transcript";
 
 type AppState = "idle" | "loading" | "active" | "error";
@@ -124,6 +127,11 @@ const PIP_PREFS_KEY = "livecaptionit:pip-prefs";
 const MODEL_PREF_KEY = "livecaptionit:model-pref";
 const CAPTION_STYLE_KEY = "livecaptionit:caption-style";
 const SOURCE_PREF_KEY = "livecaptionit:source-pref";
+// v0.5 commit 6: .vtt/.srt cue granularity preference.
+// Values: "segment" | "sentence" | "word". Default "sentence" for v2
+// transcripts (best for actual subtitling). v1 transcripts silently
+// fall back to "segment" since they have no per-word data.
+const EXPORT_GRANULARITY_KEY = "livecaptionit:export-granularity";
 
 type SourceKind = "tab" | "mic";
 function loadSourcePref(): SourceKind {
@@ -135,6 +143,20 @@ function loadSourcePref(): SourceKind {
 }
 function saveSourcePref(v: SourceKind) {
   try { localStorage.setItem(SOURCE_PREF_KEY, v); } catch {}
+}
+
+/** v0.5 commit 6 — export-granularity prefs (segment / sentence / word). */
+function loadExportGranularity(): ExportGranularity {
+  try {
+    const raw = localStorage.getItem(EXPORT_GRANULARITY_KEY);
+    if (raw === "segment" || raw === "sentence" || raw === "word") return raw;
+  } catch {}
+  // Default "sentence" — best for actual subtitling. v1 transcripts
+  // silently fall back to "segment" inside cuesForGranularity().
+  return "sentence";
+}
+function saveExportGranularity(v: ExportGranularity) {
+  try { localStorage.setItem(EXPORT_GRANULARITY_KEY, v); } catch {}
 }
 
 // NOTE: v0.3.0 shipped a translate task toggle (Transcribe vs Translate → English)
@@ -372,6 +394,11 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
   const dlSrtBtn = rootEl.querySelector<HTMLButtonElement>("#cp-dl-srt")!;
   const dlShareBtn = rootEl.querySelector<HTMLButtonElement>("#cp-dl-share")!;
   const dlClearBtn = rootEl.querySelector<HTMLButtonElement>("#cp-dl-clear")!;
+  // v0.5 commit 6 — .vtt/.srt cue granularity radio. Lives inside the
+  // download bar; visibility tracks the bar itself. Stored pref drives
+  // the initial checked state at script init; user changes persist back.
+  const granularityWrap = rootEl.querySelector<HTMLDivElement>("#cp-export-granularity-wrap")!;
+  const granularityRadios = rootEl.querySelectorAll<HTMLInputElement>('input[name="cp-export-granularity"]');
   // Source toggle (Tab / Mic) — radios in the idle screen
   const sourceRadios = rootEl.querySelectorAll<HTMLInputElement>('input[name="cp-source-toggle"]');
 
@@ -427,6 +454,10 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
   // when display capture isn't available. Restored to saved pref below if
   // support is fine.
   let currentSource: SourceKind = loadSourcePref();
+  // v0.5 commit 6 — current cue granularity for .vtt/.srt exports.
+  // Loaded from localStorage at startup; updated via the radio control
+  // in the download bar; written back to localStorage on change.
+  let currentGranularity: ExportGranularity = loadExportGranularity();
   if (!support.displayMediaAudio) {
     // No tab-audio capture, but mic mode still works via getUserMedia.
     // Force mic source + show explainer instead of disabling Start entirely.
@@ -773,6 +804,35 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
       saveSourcePref(v);
     });
   });
+
+  // v0.5 commit 6 — export-granularity radio: restore saved pref + persist
+  // on change. Visibility of the whole wrap is controlled separately by
+  // setGranularityVisibility() which runs alongside showDownloadBar() so
+  // the radio only appears when the user actually has a transcript to
+  // export AND that transcript carries per-word timing (v2 segments).
+  granularityRadios.forEach((r) => {
+    r.checked = (r.value as ExportGranularity) === currentGranularity;
+    r.addEventListener("change", () => {
+      if (!r.checked) return;
+      const v = r.value as ExportGranularity;
+      currentGranularity = v;
+      saveExportGranularity(v);
+    });
+  });
+
+  /** v0.5 commit 6 — show the granularity radio iff (a) the download
+   *  bar is showing, (b) we have at least one segment, and (c) every
+   *  segment in the active transcript is v2 (has per-word timing).
+   *  For mixed or pure-v1 transcripts the radio is hidden because
+   *  sentence/word modes would silently fall back to segment anyway. */
+  function setGranularityVisibility(segments: AnyTranscriptSegment[]): void {
+    const hasV2 = segments.length > 0 && segments.every(isV2Segment);
+    if (hasV2) {
+      granularityWrap.classList.remove("hidden");
+    } else {
+      granularityWrap.classList.add("hidden");
+    }
+  }
 
   /**
    * Single source of truth for "is the caption box currently inside PiP?".
@@ -1189,6 +1249,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     sessionStartMs = performance.now();
     currentSessionSource = currentSource === "mic" ? "mic" : "tab";
     downloadBar.classList.add("hidden");
+    setGranularityVisibility(transcriptSegments);
     // Treat the moment Start was clicked as "fresh audio incoming" so the
     // silence-reset guard doesn't fire on the first tick before any RMS
     // callbacks have come in.
@@ -1350,6 +1411,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     sessionStartMs = performance.now();
     currentSessionSource = "sample";
     downloadBar.classList.add("hidden");
+    setGranularityVisibility(transcriptSegments);
     lastNonSilentMs = performance.now();
     captionStream.innerHTML = "";
 
@@ -1450,6 +1512,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     // captured AND save it. Reset button (Clear) clears everything.
     if (transcriptSegments.length > 0) {
       downloadBar.classList.remove("hidden");
+      setGranularityVisibility(transcriptSegments);
       sourceLabel.textContent = "";
       // Stay on "active" panel so caption history is still visible,
       // but flip substate so the header (LIVE → STOPPED, Stop → Done,
@@ -1862,11 +1925,11 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
   });
   dlVttBtn.addEventListener("click", () => {
     if (transcriptSegments.length === 0) return;
-    downloadString(defaultFilename("vtt"), formatVtt(transcriptSegments), "text/vtt;charset=utf-8");
+    downloadString(defaultFilename("vtt"), formatVtt(transcriptSegments, currentGranularity), "text/vtt;charset=utf-8");
   });
   dlSrtBtn.addEventListener("click", () => {
     if (transcriptSegments.length === 0) return;
-    downloadString(defaultFilename("srt"), formatSrt(transcriptSegments), "application/x-subrip;charset=utf-8");
+    downloadString(defaultFilename("srt"), formatSrt(transcriptSegments, currentGranularity), "application/x-subrip;charset=utf-8");
   });
   // v0.4.3 — Share via URL (transcript encoded into the URL itself,
   // gzipped + base64url, no upload). Copies to clipboard + flashes toast.
@@ -1885,6 +1948,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     captionStream.innerHTML = "";
     captionCount = 0;
     downloadBar.classList.add("hidden");
+    setGranularityVisibility(transcriptSegments);
     setState("idle");
   });
 
@@ -2062,22 +2126,27 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
 
   /** Active-on-click: read viewingSessionId, refetch, then download in given format.
    *  v0.4.3 — also handles the shared-transcript path (viewingSessionId === null
-   *  but sharedTranscriptSegments is populated). */
+   *  but sharedTranscriptSegments is populated).
+   *  v0.5 commit 6 — .vtt/.srt paths honour currentGranularity. */
   function downloadCurrentSession(
     fmt: "txt" | "vtt" | "srt",
   ): void {
+    const mime =
+      fmt === "txt"
+        ? "text/plain;charset=utf-8"
+        : fmt === "vtt"
+          ? "text/vtt;charset=utf-8"
+          : "application/x-subrip;charset=utf-8";
+    const fmtSegments = (segs: AnyTranscriptSegment[]): string => {
+      if (fmt === "txt") return formatTxt(segs);
+      if (fmt === "vtt") return formatVtt(segs, currentGranularity);
+      return formatSrt(segs, currentGranularity);
+    };
     // Shared-transcript branch: no IDB lookup, segments held in memory.
     if (sharedTranscriptSegments && !viewingSessionId) {
       const stamp = new Date().toISOString().replace(/[T:.]/g, "-").slice(0, 19);
       const name = `livecaptionit-shared-${stamp}.${fmt}`;
-      const fn = fmt === "txt" ? formatTxt : fmt === "vtt" ? formatVtt : formatSrt;
-      const mime =
-        fmt === "txt"
-          ? "text/plain;charset=utf-8"
-          : fmt === "vtt"
-            ? "text/vtt;charset=utf-8"
-            : "application/x-subrip;charset=utf-8";
-      downloadString(name, fn(sharedTranscriptSegments), mime);
+      downloadString(name, fmtSegments(sharedTranscriptSegments), mime);
       return;
     }
     if (!viewingSessionId) return;
@@ -2089,14 +2158,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
           .replace(/[T:.]/g, "-")
           .slice(0, 19);
         const name = `livecaptionit-${stamp}.${fmt}`;
-        const fn = fmt === "txt" ? formatTxt : fmt === "vtt" ? formatVtt : formatSrt;
-        const mime =
-          fmt === "txt"
-            ? "text/plain;charset=utf-8"
-            : fmt === "vtt"
-              ? "text/vtt;charset=utf-8"
-              : "application/x-subrip;charset=utf-8";
-        downloadString(name, fn(s.transcript), mime);
+        downloadString(name, fmtSegments(s.transcript), mime);
       })
       .catch((err) => recordError(err, "export", { ctx: { op: "download" } }));
   }

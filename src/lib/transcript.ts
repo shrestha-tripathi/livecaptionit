@@ -170,9 +170,167 @@ function toCues(
     });
 }
 
-/** .vtt — WebVTT format. */
-export function formatVtt(segments: AnyTranscriptSegment[]): string {
-  const cues = toCues(segments);
+// ────────────────────────────────────────────────────────────────────────
+// v0.5 commit 6 — cue granularity (segment / sentence / word)
+// ────────────────────────────────────────────────────────────────────────
+
+/**
+ * .vtt/.srt cue granularity. Defaults to "sentence" (v0.5+), which is
+ * the most useful for actual subtitling. v0.4.x callers / v1 segments
+ * fall back to "segment" automatically since they have no per-word data.
+ *
+ *  - "segment":  one cue per agreement-tick batch (~600-1200ms each).
+ *                v0.4.x behaviour. Coarse but cheap.
+ *  - "sentence": group consecutive words into cues at punctuation
+ *                boundaries OR when a hard 10s wall is hit OR when
+ *                inter-word silence exceeds SENTENCE_SILENCE_GAP_MS.
+ *                Forces a hard break at MAX_SENTENCE_CUE_MS so a
+ *                wall-of-text monologue still produces readable cues.
+ *  - "word":     one cue per Word. Debug-only — produces huge .vtt
+ *                files with one entry per spoken word. Useful for
+ *                karaoke-style highlighting in custom players.
+ */
+export type ExportGranularity = "segment" | "sentence" | "word";
+
+/** Sentence-mode tuning constants. Documented inline. */
+const MAX_SENTENCE_CUE_MS = 4000;   // soft target — try to break at punctuation before this
+const HARD_SENTENCE_BREAK_MS = 10000; // hard break per roadmap OQ #3
+const SENTENCE_SILENCE_GAP_MS = 600; // if word-to-word silence > this, treat as sentence end
+
+const PUNCT_END_RE = /[.!?]$/;
+
+interface Cue {
+  start: number;
+  end: number;
+  text: string;
+}
+
+/**
+ * Flatten v2 segments into a single Word[] timeline with each word
+ * carrying an absolute session-time start/end (segment.tMs + word.tStartMs/tEndMs).
+ * Used by sentence + word granularity modes which need to operate on
+ * a per-word stream rather than per-segment batches.
+ */
+function flattenToWordTimeline(
+  segments: TranscriptSegment2[],
+): Array<{ text: string; absStartMs: number; absEndMs: number }> {
+  const out: Array<{ text: string; absStartMs: number; absEndMs: number }> = [];
+  for (const seg of segments) {
+    for (const w of seg.words) {
+      out.push({
+        text: w.text,
+        absStartMs: seg.tMs + w.tStartMs,
+        absEndMs: seg.tMs + w.tEndMs,
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * Group a Word timeline into sentence-sized cues. Boundary conditions
+ * (any one fires):
+ *   1. Word ends with .!? AND cue has ≥ 2 words (so "Yes." alone doesn't
+ *      break out a 300ms cue with just one word, but "How are you?" does
+ *      even at 700ms duration).
+ *   2. Inter-word silence > SENTENCE_SILENCE_GAP_MS
+ *   3. Cue duration would exceed HARD_SENTENCE_BREAK_MS
+ *   4. Cue duration > MAX_SENTENCE_CUE_MS AND we've seen at least
+ *      8 words (avoid premature breaks during fast speech)
+ */
+function groupSentenceCues(
+  timeline: Array<{ text: string; absStartMs: number; absEndMs: number }>,
+): Cue[] {
+  if (timeline.length === 0) return [];
+  const cues: Cue[] = [];
+  let current: typeof timeline = [];
+  let cueStartMs = timeline[0].absStartMs;
+  let lastWordEndMs = timeline[0].absStartMs;
+
+  function flush(end: number) {
+    if (current.length === 0) return;
+    const text = polishPunctuation(current.map((w) => w.text.trim()).join(" "));
+    cues.push({
+      start: cueStartMs,
+      end: Math.max(cueStartMs + 500, end),
+      text,
+    });
+    current = [];
+  }
+
+  for (let i = 0; i < timeline.length; i++) {
+    const word = timeline[i];
+    const isFirstInCue = current.length === 0;
+    if (isFirstInCue) cueStartMs = word.absStartMs;
+
+    // Check silence-gap break BEFORE pushing this word
+    const silenceMs = word.absStartMs - lastWordEndMs;
+    if (!isFirstInCue && silenceMs > SENTENCE_SILENCE_GAP_MS) {
+      flush(lastWordEndMs);
+      cueStartMs = word.absStartMs;
+    }
+
+    current.push(word);
+    lastWordEndMs = word.absEndMs;
+
+    const cueDurationMs = word.absEndMs - cueStartMs;
+    const trimmedText = word.text.trim();
+    const endsSentence = PUNCT_END_RE.test(trimmedText);
+
+    // Boundary check: any condition fires → flush
+    const shouldBreak =
+      cueDurationMs > HARD_SENTENCE_BREAK_MS ||
+      (endsSentence && current.length >= 2) ||
+      (cueDurationMs > MAX_SENTENCE_CUE_MS && current.length >= 8);
+
+    if (shouldBreak) {
+      flush(word.absEndMs);
+    }
+  }
+  flush(lastWordEndMs);
+  return cues;
+}
+
+/** One cue per word. */
+function toWordCues(
+  timeline: Array<{ text: string; absStartMs: number; absEndMs: number }>,
+): Cue[] {
+  return timeline.map((w) => ({
+    start: w.absStartMs,
+    end: Math.max(w.absStartMs + 200, w.absEndMs),
+    text: polishPunctuation(w.text.trim()),
+  }));
+}
+
+/**
+ * Resolve the cue list for a given granularity. v1 segments + "sentence"/"word"
+ * granularity fall back to "segment" because v1 has no per-word timing
+ * (sentence-grouping over synthesized uniform fake timing would produce
+ * nonsense). v2 segments honour the requested granularity exactly.
+ */
+function cuesForGranularity(
+  segments: AnyTranscriptSegment[],
+  granularity: ExportGranularity,
+): Cue[] {
+  if (granularity === "segment") return toCues(segments);
+  // sentence + word modes need real per-word timing — only sensible on v2
+  const allV2 = segments.every(isV2Segment);
+  if (!allV2) {
+    // Fall back to segment mode for v1-containing transcripts. Caller
+    // can detect this by comparing requested vs effective mode if needed.
+    return toCues(segments);
+  }
+  const timeline = flattenToWordTimeline(segments as TranscriptSegment2[]);
+  if (granularity === "word") return toWordCues(timeline);
+  return groupSentenceCues(timeline);
+}
+
+/** .vtt — WebVTT format. v0.5+ accepts an optional granularity param. */
+export function formatVtt(
+  segments: AnyTranscriptSegment[],
+  granularity: ExportGranularity = "segment",
+): string {
+  const cues = cuesForGranularity(segments, granularity);
   const lines: string[] = ["WEBVTT", ""];
   cues.forEach((cue, i) => {
     lines.push(String(i + 1));
@@ -185,9 +343,12 @@ export function formatVtt(segments: AnyTranscriptSegment[]): string {
   return lines.join("\n");
 }
 
-/** .srt — SubRip format. */
-export function formatSrt(segments: AnyTranscriptSegment[]): string {
-  const cues = toCues(segments);
+/** .srt — SubRip format. v0.5+ accepts an optional granularity param. */
+export function formatSrt(
+  segments: AnyTranscriptSegment[],
+  granularity: ExportGranularity = "segment",
+): string {
+  const cues = cuesForGranularity(segments, granularity);
   const lines: string[] = [];
   cues.forEach((cue, i) => {
     lines.push(String(i + 1));
