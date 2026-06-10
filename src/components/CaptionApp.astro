@@ -291,6 +291,23 @@
           />
         </label>
 
+        {/* v0.5 commit 7: confidence-tint toggle. Off by default. When on,
+            words in the muted live tail get a `data-confidence` attribute
+            that styles them low/med/high opacity based on how many ticks
+            they've survived in the same position. Useful for explaining
+            "why does that word keep changing" — wobbly words appear
+            obviously dimmer than stable ones. Power-user signal. */}
+        <label
+          class="flex items-center justify-between gap-2 text-xs cursor-pointer select-none px-2 py-1.5 rounded-md hover:bg-[var(--color-surface-strong)] transition-colors"
+        >
+          <span class="text-[var(--color-fg-muted)]">Confidence tint <span class="text-[var(--color-fg-subtle)] normal-case font-normal">(show how stable each live word is)</span></span>
+          <input
+            id="cp-style-confidence"
+            type="checkbox"
+            class="size-3.5 accent-[var(--color-brand)] cursor-pointer"
+          />
+        </label>
+
         {/* v0.4.3: caption theme picker */}
         <div class="flex items-center justify-between gap-2 text-xs px-2 py-1">
           <label for="cp-style-theme" class="text-[var(--color-fg-muted)]">Caption theme</label>
