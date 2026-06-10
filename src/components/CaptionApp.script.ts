@@ -56,6 +56,7 @@ import {
 import { searchSessions, debounce } from "../lib/sessionSearch";
 import { toast } from "../lib/toast";
 import { initErrorMonitor, recordError } from "../lib/errorMonitor";
+import { initPwaInstall } from "../lib/pwaInstall";
 import {
   createWhisperClient,
   AVAILABLE_MODELS,
@@ -256,6 +257,10 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
   // v0.4.3: install global error handlers + expose __lcDebugErrors().
   // Safe to call before DOM ready.
   initErrorMonitor();
+
+  // v0.4.3: PWA install prompt orchestrator. Safe before DOM ready
+  // (registers `beforeinstallprompt` / `appinstalled` listeners, no DOM reads).
+  initPwaInstall();
 
   const root = document.getElementById("caption-app");
   if (!root) return;

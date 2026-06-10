@@ -303,3 +303,89 @@ body.pip-window .cp-caption-box[data-caption-theme="terminal"] > header {
   background: #0f2138 !important;
   border-bottom-color: #1e3a5f !important;
 }
+
+/* ── PWA install prompt (v0.4.3) ──────────────────────────────────── */
+@keyframes cp-install-in {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes cp-install-out {
+  to { opacity: 0; transform: translateY(16px); }
+}
+.cp-install-prompt {
+  position: fixed;
+  bottom: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.625rem 0.75rem 0.625rem 0.875rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.08);
+  font: inherit;
+  font-size: 0.875rem;
+  color: var(--color-fg);
+  max-width: calc(100vw - 2rem);
+  animation: cp-install-in 200ms ease-out both;
+}
+.cp-install-prompt--leaving {
+  animation: cp-install-out 180ms ease-in both;
+}
+.cp-install-prompt__body {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.cp-install-prompt__icon {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+.cp-install-prompt__text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 16rem;
+}
+.cp-install-prompt__cta {
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  background: var(--color-brand);
+  color: white;
+  font-weight: 500;
+  font-size: 0.8125rem;
+  border: none;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+.cp-install-prompt__cta:hover { background: var(--color-brand-strong); }
+.cp-install-prompt__dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-fg-muted);
+  border: none;
+  cursor: pointer;
+  font-size: 1.125rem;
+  line-height: 1;
+  transition: background 120ms ease, color 120ms ease;
+}
+.cp-install-prompt__dismiss:hover {
+  background: var(--color-surface-strong);
+  color: var(--color-fg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .cp-install-prompt { animation: none !important; }
+  .cp-install-prompt--leaving { animation: none !important; }
+}
+@media (max-width: 420px) {
+  .cp-install-prompt__text { max-width: 10rem; }
+}
