@@ -83,6 +83,7 @@ describe("dispatch", () => {
   const onHelp = vi.fn();
   const shortcuts: Shortcut[] = [
     {
+      id: "stop",
       key: "Escape",
       contexts: ["active-live"],
       label: "Stop",
@@ -90,6 +91,7 @@ describe("dispatch", () => {
       handler: onStop,
     },
     {
+      id: "pause",
       key: "Space",
       contexts: ["active-live"],
       label: "Pause/Resume",
@@ -97,6 +99,7 @@ describe("dispatch", () => {
       handler: onPause,
     },
     {
+      id: "help",
       key: "?",
       contexts: [], // always
       label: "Help",
@@ -155,6 +158,7 @@ describe("dispatch — active-paused context (v0.4.1 Space pause/resume)", () =>
    */
   const shortcuts: Shortcut[] = [
     {
+      id: "stop",
       key: "Escape",
       contexts: ["active-live", "active-paused"],
       label: "Stop",
@@ -162,6 +166,7 @@ describe("dispatch — active-paused context (v0.4.1 Space pause/resume)", () =>
       handler: onStop,
     },
     {
+      id: "pause",
       key: "Space",
       contexts: ["active-live", "active-paused"],
       label: "Pause/Resume",
@@ -169,6 +174,7 @@ describe("dispatch — active-paused context (v0.4.1 Space pause/resume)", () =>
       handler: onPause,
     },
     {
+      id: "popout",
       key: "p",
       contexts: ["active-live", "active-paused"],
       label: "Pop out",
