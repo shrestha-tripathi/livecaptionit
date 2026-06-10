@@ -42,6 +42,15 @@ import {
   type ShortcutContext,
 } from "../lib/shortcuts";
 import {
+  loadOverrides as loadShortcutOverrides,
+  saveOverride as saveShortcutOverride,
+  clearOverride as clearShortcutOverride,
+  clearAllOverrides as clearAllShortcutOverrides,
+  detectConflict as detectShortcutConflict,
+  normalizeKey as normalizeShortcutKey,
+  displayKey as displayShortcutKey,
+} from "../lib/shortcutOverrides";
+import {
   saveSession,
   listSessions,
   getSession,
@@ -1377,6 +1386,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
   }
   const SHORTCUTS: Shortcut[] = [
     {
+      id: "start",
       key: "Enter",
       contexts: ["idle"],
       label: "Start captions",
@@ -1384,6 +1394,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
       handler: () => startBtn.click(),
     },
     {
+      id: "stop",
       key: "Escape",
       contexts: ["active-live", "active-paused"],
       label: "Stop capture",
@@ -1391,6 +1402,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
       handler: () => stopBtn.click(),
     },
     {
+      id: "pause",
       key: "Space",
       contexts: ["active-live", "active-paused"],
       label: "Pause / resume capture",
@@ -1398,6 +1410,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
       handler: () => void togglePause(),
     },
     {
+      id: "popout",
       key: "p",
       contexts: ["active-live", "active-paused"],
       label: "Pop out / close pop-out",
@@ -1405,6 +1418,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
       handler: () => pipBtn.click(),
     },
     {
+      id: "restart",
       key: "r",
       contexts: ["active-stopped"],
       label: "Start new session",
@@ -1412,6 +1426,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
       handler: () => restartBtn.click(),
     },
     {
+      id: "download-txt",
       key: "d",
       contexts: ["active-stopped"],
       label: "Download transcript (.txt)",
@@ -1419,6 +1434,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
       handler: () => dlTxtBtn.click(),
     },
     {
+      id: "help",
       key: "?",
       contexts: [], // always
       label: "Toggle help",
@@ -1426,6 +1442,173 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
       handler: toggleShortcutsHelp,
     },
   ];
+  // v0.4.3: apply user overrides to the SHORTCUTS array IN PLACE so both
+  // main-window and PiP-window installs see the same effective keys.
+  // We mutate vs replace so existing references (`SHORTCUTS` captured in
+  // `setPipShortcuts`'s closure) stay in sync after re-render.
+  function applyShortcutOverrides(): void {
+    const overrides = loadShortcutOverrides();
+    for (const s of SHORTCUTS) {
+      const def = SHORTCUT_DEFAULT_KEYS.get(s.id);
+      if (def === undefined) continue;
+      s.key = overrides[s.id] ?? def;
+    }
+  }
+  // Capture default keys BEFORE first override pass so we can revert.
+  const SHORTCUT_DEFAULT_KEYS = new Map(SHORTCUTS.map((s) => [s.id, s.key]));
+  applyShortcutOverrides();
+
+  // v0.4.3 — UI for remapping shortcuts inside the help dialog.
+  // Each .cp-kbd-btn has data-shortcut-id matching a Shortcut.id. Click puts
+  // the button into "listening" mode; the next non-modifier keypress remaps it.
+  // Esc cancels. Conflicts are detected and the user sees a brief error label
+  // before the button returns to its previous key.
+  const kbdButtons = Array.from(
+    document.querySelectorAll<HTMLButtonElement>(".cp-kbd-btn[data-shortcut-id]"),
+  );
+
+  /** Refresh button labels from current SHORTCUTS state. */
+  function renderShortcutButtons(): void {
+    for (const btn of kbdButtons) {
+      const id = btn.dataset.shortcutId;
+      if (!id) continue;
+      const s = SHORTCUTS.find((x) => x.id === id);
+      if (!s) continue;
+      btn.textContent = displayShortcutKey(s.key);
+      btn.removeAttribute("data-listening");
+      btn.removeAttribute("data-error");
+      btn.removeAttribute("title");
+    }
+  }
+
+  /** Currently-listening button + its capture cleanup (null if none). */
+  let listeningCleanup: (() => void) | null = null;
+
+  function cancelListening(): void {
+    if (listeningCleanup) {
+      listeningCleanup();
+      listeningCleanup = null;
+    }
+  }
+
+  function startListening(btn: HTMLButtonElement): void {
+    // Always cancel a prior listen first.
+    cancelListening();
+    const id = btn.dataset.shortcutId;
+    if (!id) return;
+    btn.dataset.listening = "true";
+    btn.textContent = "Press a key…";
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      // Esc cancels (without changing the binding).
+      if (e.key === "Escape") {
+        cleanup();
+        renderShortcutButtons();
+        return;
+      }
+      const norm = normalizeShortcutKey(e);
+      if (!norm) {
+        // Modifier+key chord — swallow and keep listening.
+        return;
+      }
+      if (norm.modifier) {
+        // Pure modifier press — wait for an actual key.
+        return;
+      }
+      if (norm.reserved) {
+        flashError(btn, `${norm.key} is reserved`);
+        return;
+      }
+      const conflictId = detectShortcutConflict(
+        id,
+        norm.key,
+        SHORTCUTS,
+        loadShortcutOverrides(),
+      );
+      if (conflictId && conflictId !== id) {
+        const other = SHORTCUTS.find((s) => s.id === conflictId);
+        flashError(btn, `Used by: ${other?.label ?? conflictId}`);
+        return;
+      }
+      // Commit. If the new key equals the default, clear the override
+      // entry (keeps localStorage clean and lets future default changes
+      // take effect).
+      const def = SHORTCUT_DEFAULT_KEYS.get(id);
+      if (norm.key === def) {
+        clearShortcutOverride(id);
+      } else {
+        saveShortcutOverride(id, norm.key);
+      }
+      applyShortcutOverrides();
+      cleanup();
+      renderShortcutButtons();
+      toast.success(`Shortcut updated`);
+    };
+
+    // Listen globally so we capture keys even if focus drifts.
+    document.addEventListener("keydown", onKeyDown, true);
+    listeningCleanup = () => {
+      document.removeEventListener("keydown", onKeyDown, true);
+      btn.removeAttribute("data-listening");
+    };
+    function cleanup() {
+      cancelListening();
+    }
+  }
+
+  function flashError(btn: HTMLButtonElement, msg: string): void {
+    btn.dataset.error = "true";
+    btn.textContent = msg;
+    setTimeout(() => {
+      btn.removeAttribute("data-error");
+      // Don't call renderShortcutButtons() — we may still be listening for
+      // the user to pick a different key. Restore just this button's label.
+      const id = btn.dataset.shortcutId;
+      if (id) {
+        const s = SHORTCUTS.find((x) => x.id === id);
+        if (s && btn.dataset.listening === "true") {
+          btn.textContent = "Press a key…";
+        } else if (s) {
+          btn.textContent = displayShortcutKey(s.key);
+        }
+      }
+    }, 1800);
+  }
+
+  for (const btn of kbdButtons) {
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (btn.dataset.listening === "true") {
+        cancelListening();
+        renderShortcutButtons();
+      } else {
+        startListening(btn);
+      }
+    });
+  }
+
+  // Reset-to-defaults button.
+  const resetShortcutsBtn = rootEl.querySelector<HTMLButtonElement>("#cp-reset-shortcuts-btn");
+  resetShortcutsBtn?.addEventListener("click", () => {
+    cancelListening();
+    clearAllShortcutOverrides();
+    applyShortcutOverrides();
+    renderShortcutButtons();
+    toast.success("Shortcuts reset to defaults");
+  });
+
+  // Cancel any listening session when the help dialog closes.
+  shortcutsHelpDialog.addEventListener("close", () => {
+    cancelListening();
+    renderShortcutButtons();
+  });
+
+  // Initial paint so any localStorage-persisted overrides show up in the UI
+  // (in case the user opens the dialog later — we already applied them).
+  renderShortcutButtons();
   // Always install on the main document.
   installShortcuts(document, SHORTCUTS, getShortcutContext);
   /** Currently-installed PiP shortcut uninstaller. Resetting it lets us

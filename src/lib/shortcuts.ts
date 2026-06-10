@@ -18,6 +18,10 @@
 export type ShortcutContext = "idle" | "loading" | "active-live" | "active-paused" | "active-stopped";
 
 export interface Shortcut {
+  /** Stable identifier used by the override layer. NEVER reuse — if a
+   *  shortcut's purpose changes, give it a new id and let the old override
+   *  silently go unused (no breakage on upgrade). */
+  id: string;
   /** Single key or modifier+key combo (e.g. "Space", "Escape", "?"). */
   key: string;
   /** App states where this shortcut should fire. Empty array = always. */

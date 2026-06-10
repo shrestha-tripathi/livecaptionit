@@ -513,38 +513,45 @@
         <section>
           <h4 class="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-fg-muted)] mb-2">Capture</h4>
           <ul class="space-y-1">
-            <li class="flex items-center justify-between gap-4"><span>Pause / resume capture</span><kbd class="cp-kbd">Space</kbd></li>
-            <li class="flex items-center justify-between gap-4"><span>Stop capture</span><kbd class="cp-kbd">Esc</kbd></li>
+            <li class="flex items-center justify-between gap-4"><span>Pause / resume capture</span><button type="button" class="cp-kbd-btn" data-shortcut-id="pause">Space</button></li>
+            <li class="flex items-center justify-between gap-4"><span>Stop capture</span><button type="button" class="cp-kbd-btn" data-shortcut-id="stop">Esc</button></li>
           </ul>
         </section>
         <section>
           <h4 class="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-fg-muted)] mb-2">Window</h4>
           <ul class="space-y-1">
-            <li class="flex items-center justify-between gap-4"><span>Pop out / close pop-out</span><kbd class="cp-kbd">P</kbd></li>
+            <li class="flex items-center justify-between gap-4"><span>Pop out / close pop-out</span><button type="button" class="cp-kbd-btn" data-shortcut-id="popout">P</button></li>
           </ul>
         </section>
         <section>
           <h4 class="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-fg-muted)] mb-2">After stop</h4>
           <ul class="space-y-1">
-            <li class="flex items-center justify-between gap-4"><span>Start new session</span><kbd class="cp-kbd">R</kbd></li>
-            <li class="flex items-center justify-between gap-4"><span>Download transcript (.txt)</span><kbd class="cp-kbd">D</kbd></li>
+            <li class="flex items-center justify-between gap-4"><span>Start new session</span><button type="button" class="cp-kbd-btn" data-shortcut-id="restart">R</button></li>
+            <li class="flex items-center justify-between gap-4"><span>Download transcript (.txt)</span><button type="button" class="cp-kbd-btn" data-shortcut-id="download-txt">D</button></li>
           </ul>
         </section>
         <section>
           <h4 class="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-fg-muted)] mb-2">Idle</h4>
           <ul class="space-y-1">
-            <li class="flex items-center justify-between gap-4"><span>Start captions</span><kbd class="cp-kbd">Enter</kbd></li>
+            <li class="flex items-center justify-between gap-4"><span>Start captions</span><button type="button" class="cp-kbd-btn" data-shortcut-id="start">Enter</button></li>
           </ul>
         </section>
         <section>
           <h4 class="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-fg-muted)] mb-2">Help</h4>
           <ul class="space-y-1">
-            <li class="flex items-center justify-between gap-4"><span>Toggle this overlay</span><kbd class="cp-kbd">?</kbd></li>
+            <li class="flex items-center justify-between gap-4"><span>Toggle this overlay</span><button type="button" class="cp-kbd-btn" data-shortcut-id="help">?</button></li>
           </ul>
         </section>
+        <p id="cp-shortcuts-hint" class="text-[11px] text-[var(--color-fg-subtle)] mt-1">
+          Click any key to remap. Press <kbd class="cp-kbd">Esc</kbd> to cancel a remap.
+        </p>
       </div>
       <footer class="px-5 py-3 border-t border-[var(--color-border)] text-[11px] text-[var(--color-fg-subtle)] flex justify-between items-center">
-        <span>Shortcuts disabled while typing</span>
+        <button
+          type="button"
+          id="cp-reset-shortcuts-btn"
+          class="text-[var(--color-fg-subtle)] hover:text-[var(--color-fg-muted)] transition-colors"
+        >Reset to defaults</button>
         <div class="flex items-center gap-2">
           <button
             type="button"
