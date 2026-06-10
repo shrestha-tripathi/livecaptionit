@@ -34,8 +34,21 @@ export interface WindowResult2 {
   durationMs: number;
 }
 
+/**
+ * v0.5.1 — init options. `forceDevice: "wasm"` skips the WebGPU
+ * adapter probe entirely. The parent passes this when isMobileDevice()
+ * returns true: mobile WebGPU adapters are unreliable (Android Chrome
+ * often returns null after a long timeout, iOS Safari has no WebGPU
+ * support at all), and the silent 120s hang waiting for the adapter
+ * looked indistinguishable from a page crash to mobile users.
+ * Desktop callers can omit this field — WebGPU-first is always tried.
+ */
+export interface WhisperInitOptions {
+  forceDevice?: "wasm";
+}
+
 export interface WhisperClient {
-  init: (model?: string) => Promise<{ model: string; device: "webgpu" | "wasm" }>;
+  init: (model?: string, opts?: WhisperInitOptions) => Promise<{ model: string; device: "webgpu" | "wasm" }>;
   /** Single-shot transcription. Returns text only (legacy v0.1 API). */
   transcribe: (audio: Float32Array) => Promise<string>;
   /** Streaming transcription. Returns text + wall-clock inference duration. */
@@ -115,6 +128,24 @@ export const AVAILABLE_MODELS: ModelSpec[] = [
 ];
 
 export const DEFAULT_MODEL_ID: ModelSpec["id"] = "base";
+
+/**
+ * v0.5.1 — mobile-specific default model. Mobile devices (especially
+ * mid-range Android + iOS Safari) have a much tighter JS heap budget
+ * than desktop browsers — typically 1.5-2 GB total, with WebKit's
+ * jetsam killing tabs that exceed ~70% of physical RAM. The default
+ * `base` (74 MB) model + transformers.js runtime + ONNX/WASM workspace
+ * routinely pushes a 4 GB iPhone into the kill zone within seconds of
+ * starting capture. `tiny` (39 MB) leaves enough headroom for the
+ * pipeline AND the audio rolling buffer to coexist safely.
+ *
+ * Used only when the user has NOT explicitly set a model preference —
+ * if they pick base/small/large-turbo in the model picker we honour it
+ * (with a one-time "this might be heavy on mobile" warning shown in
+ * the support-warn banner). Stored under the same MODEL_PREF_KEY so
+ * desktop ↔ mobile devices syncing prefs respect the user's pick.
+ */
+export const MOBILE_DEFAULT_MODEL_ID: ModelSpec["id"] = "tiny";
 
 export function modelById(id: string): ModelSpec {
   return AVAILABLE_MODELS.find((m) => m.id === id) || AVAILABLE_MODELS[1];
@@ -207,11 +238,18 @@ export function createWhisperClient(workerUrl = "/whisper-worker.js"): WhisperCl
   };
 
   const client: WhisperClient = {
-    init(model = "onnx-community/whisper-base") {
+    init(model = "onnx-community/whisper-base", opts?: WhisperInitOptions) {
       return new Promise((resolve, reject) => {
         initResolve = resolve;
         initReject = reject;
-        worker.postMessage({ type: "init", model });
+        // v0.5.1: forward forceDevice. The worker handles both legacy
+        // (no opts) and v0.5.1 callers — undefined forceDevice means
+        // "try WebGPU first" (default desktop behaviour).
+        worker.postMessage({
+          type: "init",
+          model,
+          forceDevice: opts?.forceDevice,
+        });
       });
     },
     async transcribe(audio: Float32Array): Promise<string> {

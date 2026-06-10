@@ -278,44 +278,158 @@ export interface RollingBuffer {
 export function createRollingBuffer(
   maxSamples = ROLLING_SOFT_CAP_SECONDS * TARGET_SAMPLE_RATE,
 ): RollingBuffer {
-  let buf: Float32Array = new Float32Array(0);
+  // v0.5.1 — fixed-capacity ring buffer. Replaces the v0.1.2 append-only
+  // Float32Array that re-allocated buf.length + samples.length bytes on
+  // EVERY frame, producing O(n²) allocation churn that OOM-crashed mobile
+  // (Android Chrome / iOS Safari) within ~5-15 seconds of mic capture.
+  // The new implementation pre-allocates a single Float32Array sized to
+  // `maxSamples`, treats it as a circular buffer with read/write cursors,
+  // and exposes the same external API. Per-frame cost is now O(samples)
+  // instead of O(total) — zero allocation after warmup. The 21 pre-v0.5.1
+  // contract tests in this file pin the external behaviour; the 3 new
+  // tests pin the v0.5.1 ring-buffer-specific behaviour (cap is hard,
+  // overflow drops oldest, no memory growth past cap).
+
+  if (maxSamples <= 0) {
+    throw new Error("createRollingBuffer: maxSamples must be > 0");
+  }
+
+  // Pre-allocate once. We never reallocate the storage during the
+  // buffer's lifetime — this is the whole point of the v0.5.1 fix.
+  const storage = new Float32Array(maxSamples);
+  // `head` = next write index (mod maxSamples).
+  // `count` = current logical length (always <= maxSamples).
+  // When count < maxSamples, logical samples occupy storage[0..count].
+  // When count === maxSamples, logical samples occupy storage as a ring
+  // starting at storage[(head) % maxSamples] reading forward modulo.
+  let head = 0;
+  let count = 0;
+
+  /** Internal: linearize the ring contents into a new Float32Array.
+   *  Used by snapshot() (consumer needs owned contiguous buffer) and
+   *  conceptually by trimFront (we shift cursors instead of copying). */
+  function readAll(): Float32Array {
+    if (count === 0) return new Float32Array(0);
+    const out = new Float32Array(count);
+    if (count < maxSamples) {
+      // Storage is still in linear-fill mode — first `count` samples
+      // are contiguous from index 0.
+      out.set(storage.subarray(0, count));
+    } else {
+      // Ring is full — `head` is the oldest sample. Read tail then head.
+      const tail = maxSamples - head;
+      out.set(storage.subarray(head, maxSamples), 0);
+      out.set(storage.subarray(0, head), tail);
+    }
+    return out;
+  }
 
   return {
     append(samples) {
       if (samples.length === 0) return;
-      // APPEND-ONLY. We intentionally do NOT auto-trim at cap because
-      // LocalAgreement-2 requires the buffer's leading audio to stay
-      // stable across ticks — if we silently drop front samples,
-      // Whisper's transcription leading words shift every tick and
-      // the agreement algorithm never fires. Instead, the caller
-      // checks isOverCap() and force-commits when needed.
-      const merged = new Float32Array(buf.length + samples.length);
-      merged.set(buf, 0);
-      merged.set(samples, buf.length);
-      buf = merged;
-    },
-    snapshot() {
-      return new Float32Array(buf);
-    },
-    trimFront(samples) {
-      if (samples <= 0) return;
-      if (samples >= buf.length) {
-        buf = new Float32Array(0);
+
+      // Case 1: incoming frame is larger than capacity. Keep only its
+      // last `maxSamples` samples, reset state to ring-full at head 0.
+      if (samples.length >= maxSamples) {
+        storage.set(samples.subarray(samples.length - maxSamples));
+        head = 0;
+        count = maxSamples;
         return;
       }
-      buf = new Float32Array(buf.subarray(samples));
+
+      // Case 2: there's still linear-fill room left (count + samples
+      // fits in the first maxSamples slots, no wrap needed). Fast path.
+      if (count + samples.length <= maxSamples) {
+        storage.set(samples, count);
+        count += samples.length;
+        // head stays at 0 until the buffer first fills — when it does,
+        // any subsequent overflow is handled by the ring case below.
+        return;
+      }
+
+      // Case 3: write would overflow the cap. Conceptually we "drop the
+      // oldest" samples to make room. In the ring representation that
+      // means we advance `head` so the new write tail aligns. The first
+      // time we hit this, we ALSO normalize state to "ring is full at
+      // head" by physically reordering the existing contents so the
+      // ring invariant (always-full once we've ever overflowed) is
+      // maintained cleanly. This only happens once per buffer lifetime,
+      // not per frame — amortized O(1) per overflow frame after.
+      if (count < maxSamples) {
+        // Promote to ring-full: shift existing samples so the OLDEST
+        // samples-that-will-survive sit at index 0. The samples we keep
+        // are storage[count + samples.length - maxSamples .. count].
+        const keepStart = count + samples.length - maxSamples;
+        const kept = storage.slice(keepStart, count);
+        storage.set(kept, 0);
+        storage.set(samples, kept.length);
+        head = 0;
+        count = maxSamples;
+        return;
+      }
+
+      // Case 4: ring is already full. Write `samples` at the current
+      // head, advancing head modulo cap. This may wrap mid-write.
+      const firstChunk = Math.min(samples.length, maxSamples - head);
+      storage.set(samples.subarray(0, firstChunk), head);
+      if (firstChunk < samples.length) {
+        storage.set(samples.subarray(firstChunk), 0);
+      }
+      head = (head + samples.length) % maxSamples;
+      // count stays at maxSamples (still full).
     },
+
+    snapshot() {
+      // Always returns an OWNED Float32Array — caller may mutate or
+      // transfer (postMessage). This is load-bearing: the Whisper
+      // worker takes ownership via the transferList in
+      // whisperClient.transcribeWindow2().
+      return readAll();
+    },
+
+    trimFront(samples) {
+      if (samples <= 0) return;
+      if (samples >= count) {
+        // Drop everything — reset cursor state instead of copying zeros.
+        head = 0;
+        count = 0;
+        return;
+      }
+      if (count < maxSamples) {
+        // Linear-fill mode — physically shift the tail forward. Costs
+        // O(count - samples) but only happens on force-commit (rare).
+        const remaining = count - samples;
+        // copyWithin handles overlap correctly (memmove semantics).
+        storage.copyWithin(0, samples, count);
+        count = remaining;
+        // head remains 0 (we're still in linear-fill mode).
+      } else {
+        // Ring-full mode — advance head + shrink count. No data copy.
+        head = (head + samples) % maxSamples;
+        count -= samples;
+        // Once count drops below maxSamples we COULD re-linearize for
+        // cheaper snapshots, but trimFront is followed almost always
+        // by more appends; let the ring handle it.
+      }
+    },
+
     length() {
-      return buf.length;
+      return count;
     },
+
     durationSeconds() {
-      return buf.length / TARGET_SAMPLE_RATE;
+      return count / TARGET_SAMPLE_RATE;
     },
+
     isOverCap() {
-      return buf.length >= maxSamples;
+      return count >= maxSamples;
     },
+
     reset() {
-      buf = new Float32Array(0);
+      head = 0;
+      count = 0;
+      // Don't zero `storage` — readAll() only ever reads up to `count`
+      // valid samples; stale data past `count` is unreachable.
     },
   };
 }

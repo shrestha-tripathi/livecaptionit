@@ -98,7 +98,7 @@ function buildProgressCallback() {
   };
 }
 
-async function init(model = DEFAULT_MODEL) {
+async function init(model = DEFAULT_MODEL, opts = {}) {
   if (asr && currentModel === model) {
     self.postMessage({ type: "ready", model: currentModel, device: "webgpu" });
     return;
@@ -122,31 +122,48 @@ async function init(model = DEFAULT_MODEL) {
   // GPU, which takes longer for 500MB+ payloads.
   const initTimeout = isLargeTurbo ? 240_000 : 120_000;
 
+  // v0.5.1 — `forceDevice: "wasm"` lets the parent skip the WebGPU
+  // adapter probe entirely. On mobile (Android Chrome / iOS Safari)
+  // `navigator.gpu` exists but the adapter is unreliable — many devices
+  // either return null after a long timeout, or return an adapter that
+  // OOMs during weight transfer. The parent passes forceDevice: "wasm"
+  // when isMobileDevice() so we don't waste 120s + risk a GPU OOM.
+  // Desktop ALWAYS goes through the WebGPU-first path (better perf).
+  const forceWasm = opts && opts.forceDevice === "wasm";
+
   // Try WebGPU first — fastest path. Per-component dtype matches the
-  // realtime-whisper-webgpu reference demo.
-  try {
+  // realtime-whisper-webgpu reference demo. Skipped entirely when the
+  // parent explicitly asks for WASM (mobile, or future opt-out toggle).
+  if (!forceWasm) {
+    try {
+      self.postMessage({
+        type: "loading",
+        message: "Initializing WebGPU pipeline…",
+      });
+      asr = await withTimeout(
+        pipeline("automatic-speech-recognition", model, {
+          device: "webgpu",
+          dtype,
+          progress_callback,
+        }),
+        initTimeout,
+        "WebGPU model load (encoder/decoder weights from huggingface.co)",
+      );
+      self.postMessage({ type: "ready", model: currentModel, device: "webgpu" });
+      return;
+    } catch (gpuErr) {
+      // WebGPU not available, or load failed. Fall back to WASM.
+      self.postMessage({
+        type: "loading",
+        message:
+          "WebGPU unavailable or failed — falling back to WASM (slower). " +
+          `(${(gpuErr && gpuErr.message) || gpuErr})`,
+      });
+    }
+  } else {
     self.postMessage({
       type: "loading",
-      message: "Initializing WebGPU pipeline…",
-    });
-    asr = await withTimeout(
-      pipeline("automatic-speech-recognition", model, {
-        device: "webgpu",
-        dtype,
-        progress_callback,
-      }),
-      initTimeout,
-      "WebGPU model load (encoder/decoder weights from huggingface.co)",
-    );
-    self.postMessage({ type: "ready", model: currentModel, device: "webgpu" });
-    return;
-  } catch (gpuErr) {
-    // WebGPU not available, or load failed. Fall back to WASM.
-    self.postMessage({
-      type: "loading",
-      message:
-        "WebGPU unavailable or failed — falling back to WASM (slower). " +
-        `(${(gpuErr && gpuErr.message) || gpuErr})`,
+      message: "Loading model (WASM mode for mobile compatibility)…",
     });
   }
 
@@ -167,7 +184,7 @@ async function init(model = DEFAULT_MODEL) {
     self.postMessage({
       type: "error",
       message:
-        "Both WebGPU and WASM pipeline init failed. " +
+        (forceWasm ? "WASM" : "Both WebGPU and WASM") + " pipeline init failed. " +
         `Last error: ${(wasmErr && wasmErr.message) || wasmErr}`,
     });
   }
@@ -260,7 +277,7 @@ self.onmessage = async (e) => {
   const data = e.data || {};
   switch (data.type) {
     case "init":
-      await init(data.model);
+      await init(data.model, { forceDevice: data.forceDevice });
       break;
     case "transcribe":
       await transcribe(data.audio, data.id);
