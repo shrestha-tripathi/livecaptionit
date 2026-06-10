@@ -57,6 +57,11 @@ import {
   VOCABULARY_MAX_CHARS,
 } from "../lib/vocabulary";
 import {
+  decodeShareUrl,
+  encodeShareUrl,
+  readSharePayloadFromLocation,
+} from "../lib/shareLink";
+import {
   saveSession,
   listSessions,
   getSession,
@@ -362,6 +367,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
   const sessionViewDelete = rootEl.querySelector<HTMLButtonElement>("#cp-session-view-delete")!;
   const dlVttBtn = rootEl.querySelector<HTMLButtonElement>("#cp-dl-vtt")!;
   const dlSrtBtn = rootEl.querySelector<HTMLButtonElement>("#cp-dl-srt")!;
+  const dlShareBtn = rootEl.querySelector<HTMLButtonElement>("#cp-dl-share")!;
   const dlClearBtn = rootEl.querySelector<HTMLButtonElement>("#cp-dl-clear")!;
   // Source toggle (Tab / Mic) — radios in the idle screen
   const sourceRadios = rootEl.querySelectorAll<HTMLInputElement>('input[name="cp-source-toggle"]');
@@ -1739,6 +1745,18 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     if (transcriptSegments.length === 0) return;
     downloadString(defaultFilename("srt"), formatSrt(transcriptSegments), "application/x-subrip;charset=utf-8");
   });
+  // v0.4.3 — Share via URL (transcript encoded into the URL itself,
+  // gzipped + base64url, no upload). Copies to clipboard + flashes toast.
+  dlShareBtn.addEventListener("click", async () => {
+    if (transcriptSegments.length === 0) return;
+    try {
+      const url = await encodeShareUrl(transcriptSegments, window.location.origin);
+      await navigator.clipboard.writeText(url);
+      toast.success("Share link copied to clipboard");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't create share link.");
+    }
+  });
   dlClearBtn.addEventListener("click", () => {
     transcriptSegments = [];
     captionStream.innerHTML = "";
@@ -1883,10 +1901,62 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     sessionViewDialog.showModal();
   }
 
-  /** Active-on-click: read viewingSessionId, refetch, then download in given format. */
+  /** v0.4.3 — Open the viewer dialog with a transcript decoded from a
+   *  share URL. We mark viewingSessionId = null so the download buttons
+   *  inside the dialog still work via a synthetic StoredSession path
+   *  (see downloadSharedTranscript). The Delete button is suppressed in
+   *  shared-view mode. */
+  let sharedTranscriptSegments: typeof transcriptSegments | null = null;
+  async function openSharedTranscript(payload: string): Promise<void> {
+    let decoded: Awaited<ReturnType<typeof decodeShareUrl>>;
+    try {
+      decoded = await decodeShareUrl(payload);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't open shared transcript.");
+      return;
+    }
+    sharedTranscriptSegments = decoded.segments;
+    viewingSessionId = null;
+    const sourceLabel = "shared link";
+    const dateLabel = decoded.bundle.t
+      ? new Date(decoded.bundle.t).toLocaleString()
+      : "received via link";
+    sessionViewMeta.textContent = `${dateLabel} · ${sourceLabel}`;
+    sessionViewBody.textContent =
+      formatTxt(decoded.segments) || "(empty shared transcript)";
+    // Hide the Delete button in shared mode — there's nothing to delete
+    // (the transcript only exists in this page session).
+    sessionViewDelete.classList.add("hidden");
+    sessionViewDialog.showModal();
+    // Restore Delete button visibility next time the dialog opens via
+    // viewSession() — listen once.
+    const restore = () => {
+      sessionViewDelete.classList.remove("hidden");
+      sharedTranscriptSegments = null;
+    };
+    sessionViewDialog.addEventListener("close", restore, { once: true });
+  }
+
+  /** Active-on-click: read viewingSessionId, refetch, then download in given format.
+   *  v0.4.3 — also handles the shared-transcript path (viewingSessionId === null
+   *  but sharedTranscriptSegments is populated). */
   function downloadCurrentSession(
     fmt: "txt" | "vtt" | "srt",
   ): void {
+    // Shared-transcript branch: no IDB lookup, segments held in memory.
+    if (sharedTranscriptSegments && !viewingSessionId) {
+      const stamp = new Date().toISOString().replace(/[T:.]/g, "-").slice(0, 19);
+      const name = `livecaptionit-shared-${stamp}.${fmt}`;
+      const fn = fmt === "txt" ? formatTxt : fmt === "vtt" ? formatVtt : formatSrt;
+      const mime =
+        fmt === "txt"
+          ? "text/plain;charset=utf-8"
+          : fmt === "vtt"
+            ? "text/vtt;charset=utf-8"
+            : "application/x-subrip;charset=utf-8";
+      downloadString(name, fn(sharedTranscriptSegments), mime);
+      return;
+    }
     if (!viewingSessionId) return;
     void getSession(viewingSessionId)
       .then((s) => {
@@ -1993,6 +2063,26 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
   });
   // Initial render on page load
   void renderHistory();
+
+  // v0.4.3 — if the page was opened with ?t=<payload>, decode it and
+  // pop the session viewer with the shared transcript. Strip the param
+  // afterwards so reloading doesn't re-open the dialog AND so the URL
+  // shown to the user looks clean. Done after renderHistory() so the
+  // viewer dialog overlays a populated idle screen, not an empty one.
+  const sharedPayload = readSharePayloadFromLocation(window.location);
+  if (sharedPayload !== null) {
+    void openSharedTranscript(sharedPayload).finally(() => {
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("t");
+        url.searchParams.delete("v");
+        const cleaned = url.pathname + (url.search ? url.search : "") + url.hash;
+        window.history.replaceState(null, "", cleaned);
+      } catch {
+        /* ignore */
+      }
+    });
+  }
 
   // Ensure clean shutdown if user closes the tab while capturing
   window.addEventListener("pagehide", () => {
