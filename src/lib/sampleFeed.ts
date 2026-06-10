@@ -223,3 +223,70 @@ function mergeToMono(buffer: AudioBuffer): Float32Array {
   }
   return mono;
 }
+
+/**
+ * `CaptureHandle`-compatible adapter around `playSampleThroughPipeline`.
+ * Lets `CaptionApp.script.ts#startPipeline` use the sample as a drop-in
+ * audio source — same `onAudio` / `onLevel` / `onError` / `onSourceEnded`
+ * contract as the real `getDisplayMedia` / `getUserMedia` paths.
+ *
+ * Shape intentionally matches `audioCapture.ts#CaptureHandle` so the
+ * caller can store it in the same `captureHandle` variable and rely on
+ * `stopPipeline()` calling `.stop()` to tear down. Avoids a separate
+ * sample-only code path in script.ts.
+ */
+export interface SampleCaptureHandle {
+  stop: () => void;
+  hasAudio: boolean;
+  sourceLabel: string;
+}
+
+export interface SampleCaptureOptions {
+  onAudio: (samples: Float32Array) => void;
+  onLevel?: (rms: number) => void;
+  onError: (err: Error) => void;
+  onSourceEnded: () => void;
+}
+
+/**
+ * Start the sample feed as if it were live capture. Resolves once
+ * playback has started AND the first audio frame has been emitted.
+ * Rejects on fetch / decode / autoplay-policy failure.
+ *
+ * @param audioEl Hidden `<audio>` element on the page
+ * @param fetchUrl URL to fetch the sample MP3 from (default "/sample.mp3")
+ * @param opts Capture-style callbacks
+ */
+export async function startSampleCapture(
+  audioEl: HTMLAudioElement,
+  fetchUrl: string,
+  opts: SampleCaptureOptions,
+): Promise<SampleCaptureHandle> {
+  // Reuse the same AudioContext as live capture would (16kHz mono).
+  // Match audioCapture.ts's request — browser may resample below.
+  const audioContext = new AudioContext({ sampleRate: 16000 });
+
+  let handle: SampleFeedHandle | null = null;
+  try {
+    handle = await playSampleThroughPipeline(audioEl, audioContext, fetchUrl, {
+      onAudio: opts.onAudio,
+      onLevel: (rms) => opts.onLevel?.(rms),
+      onEnded: () => {
+        opts.onSourceEnded();
+      },
+    });
+  } catch (err) {
+    void audioContext.close().catch(() => {});
+    opts.onError(err instanceof Error ? err : new Error(String(err)));
+    throw err;
+  }
+
+  return {
+    stop: () => {
+      handle?.stop();
+      void audioContext.close().catch(() => {});
+    },
+    hasAudio: true,
+    sourceLabel: "Sample audio",
+  };
+}

@@ -35,6 +35,7 @@ import {
   MIN_AUDIO_SECONDS,
   type CaptureHandle,
 } from "../lib/audioCapture";
+import { startSampleCapture } from "../lib/sampleFeed";
 import {
   createWhisperClient,
   AVAILABLE_MODELS,
@@ -213,6 +214,8 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     error: rootEl.querySelector<HTMLDivElement>('[data-panel="error"]')!,
   };
   const startBtn = rootEl.querySelector<HTMLButtonElement>("#cp-start-btn")!;
+  const sampleBtn = rootEl.querySelector<HTMLButtonElement>("#cp-sample-btn")!;
+  const sampleAudioEl = rootEl.querySelector<HTMLAudioElement>("#cp-sample-audio")!;
   const stopBtn = rootEl.querySelector<HTMLButtonElement>("#cp-stop-btn")!;
   const restartBtn = rootEl.querySelector<HTMLButtonElement>("#cp-restart-btn")!;
   const pipBtn = rootEl.querySelector<HTMLButtonElement>("#cp-pip-btn")!;
@@ -936,6 +939,95 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     void initPromise;
   }
 
+  /**
+   * v0.4.0 onboarding shortcut. Plays a bundled MP3 through the SAME
+   * pipeline as live capture — no `getDisplayMedia` / `getUserMedia`
+   * prompts. First-time visitors see captions within ~2-3s of click.
+   *
+   * Reuses `startSampleCapture` (a `CaptureHandle`-shaped adapter around
+   * sampleFeed) so the rest of the pipeline doesn't know or care it's a
+   * sample — auto-stops on `ended` via `onSourceEnded`, same as real
+   * tab-ended / mic-revoked teardown.
+   *
+   * Forces inline mode (no PiP for the sample) so there's zero permission
+   * surface; opens audio, model load, transcription all happen in-tab.
+   */
+  async function startSampleSession() {
+    setState("loading");
+    setSubstate("live");
+    showLoading("Loading sample…");
+
+    // Same reset as startPipeline.
+    whisperReady = false;
+    rolling.reset();
+    agreement.reset();
+    nextTickMs = TICK_INTERVAL_MS;
+    transcriptSegments = [];
+    sessionStartMs = performance.now();
+    downloadBar.classList.add("hidden");
+    lastNonSilentMs = performance.now();
+    captionStream.innerHTML = "";
+
+    // Sample plays inline regardless of inline-pref to keep the demo
+    // friction-free (PiP opening would steal focus from caption stream).
+    pipHandle = null;
+    setPipMode(false);
+
+    // Kick off worker init in background (same model preference as live).
+    whisper = createWhisperClient("/whisper-worker.js");
+    whisper.onStatus((s) => {
+      switch (s.type) {
+        case "loading":
+          showCaptionStatus(s.message, s.progress);
+          break;
+        case "ready":
+          whisperReady = true;
+          showCaptionStatus("Listening to sample…");
+          break;
+        case "error":
+          showError(s.message);
+          break;
+      }
+    });
+    const activeModel = modelById(loadModelPref());
+    const initPromise = whisper.init(activeModel.hfId).catch((e) => {
+      showError(`Couldn't load Whisper: ${(e as Error).message}`);
+    });
+
+    // Start the sample as if it were live capture.
+    try {
+      captureHandle = await startSampleCapture(sampleAudioEl, "/sample.mp3", {
+        onAudio: (samples) => rolling.append(samples),
+        onLevel: (rms) => {
+          if (rms > SILENCE_RMS_THRESHOLD) lastNonSilentMs = performance.now();
+        },
+        onError: (err) => showError(err.message),
+        onSourceEnded: () => {
+          stopPipeline("Sample ended.");
+        },
+      });
+    } catch (e) {
+      showError((e as Error).message);
+      whisper?.dispose();
+      whisper = null;
+      return;
+    }
+
+    captionCount = 0;
+    captionStream.innerHTML = "";
+    if (whisperReady) {
+      showCaptionStatus("Listening to sample…");
+    } else {
+      showCaptionStatus("Loading Whisper model… (~75 MB one-time)");
+    }
+    sourceLabel.textContent = `· ${captureHandle.sourceLabel}`;
+    setState("active");
+    setSubstate("live");
+
+    scheduleNextTick();
+    void initPromise;
+  }
+
   function stopPipeline(_reason?: string) {
     if (tickTimer !== null) {
       clearTimeout(tickTimer);
@@ -1016,6 +1108,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
 
   // ── Event wiring ──
   startBtn.addEventListener("click", () => void startPipeline());
+  sampleBtn.addEventListener("click", () => void startSampleSession());
   stopBtn.addEventListener("click", () => {
     if (currentSubstate === "stopped") {
       // "Done" — user has reviewed/downloaded transcript, ready to go home.
