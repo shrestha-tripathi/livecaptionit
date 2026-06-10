@@ -46,15 +46,35 @@ describe("shareLink", () => {
   });
 
   describe("buildBundle / expandBundle round-trip", () => {
-    it("preserves segments", () => {
+    it("preserves segment text + tMs (with synthetic per-word timing for v1 inputs)", () => {
       const original = segs(3);
       const bundle = buildBundle(original);
       const restored = expandBundle(bundle);
-      expect(restored).toEqual(original);
+      // v0.5: v1 inputs are auto-upgraded to v2 with synthetic timing.
+      // Per-segment tMs is preserved exactly; per-word .text matches
+      // (after the leading-space trim that v1→v2 doesn't introduce).
+      expect(restored).toHaveLength(original.length);
+      original.forEach((origSeg, i) => {
+        expect(restored[i].tMs).toBe(origSeg.tMs);
+        expect(restored[i].words.map((w) => w.text)).toEqual(origSeg.words);
+        // Synthetic timing: tStartMs/tEndMs are integers >= 0, monotonic.
+        restored[i].words.forEach((w, j, arr) => {
+          expect(w.tStartMs).toBeGreaterThanOrEqual(0);
+          expect(w.tEndMs).toBeGreaterThanOrEqual(w.tStartMs);
+          if (j > 0) {
+            expect(w.tStartMs).toBeGreaterThanOrEqual(arr[j - 1].tStartMs);
+          }
+        });
+      });
     });
 
-    it("sets version to 1", () => {
-      expect(buildBundle([]).v).toBe(1);
+    it("sets version to 2 (v0.5+ default wire format)", () => {
+      expect(buildBundle([]).v).toBe(2);
+    });
+
+    it("buildBundleV1 still emits v: 1 for callers that need the legacy format", async () => {
+      const { buildBundleV1 } = await import("./shareLink");
+      expect(buildBundleV1([]).v).toBe(1);
     });
 
     it("includes a preview from the first segment", () => {
@@ -74,16 +94,23 @@ describe("shareLink", () => {
   });
 
   describe("encodeShareUrl / decodeShareUrl round-trip", () => {
-    it("encodes + decodes a small transcript", async () => {
+    it("encodes + decodes a small transcript (v: 2 wire format)", async () => {
       const original = segs(5);
       const url = await encodeShareUrl(original, "https://livecaptionit.com");
-      expect(url).toMatch(/^https:\/\/livecaptionit\.com\/\?t=.+&v=1$/);
+      // v0.5 default wire format is v: 2
+      expect(url).toMatch(/^https:\/\/livecaptionit\.com\/\?t=.+&v=2$/);
 
       const params = new URL(url).searchParams;
       const payload = params.get("t")!;
       const { segments, bundle } = await decodeShareUrl(payload);
-      expect(segments).toEqual(original);
-      expect(bundle.v).toBe(1);
+      expect(bundle.v).toBe(2);
+      // Restored segments are v2 (Word[]). Verify .text round-trips
+      // exactly + tMs preserved.
+      expect(segments).toHaveLength(original.length);
+      segments.forEach((seg, i) => {
+        expect(seg.tMs).toBe(original[i].tMs);
+        expect(seg.words.map((w) => w.text)).toEqual(original[i].words);
+      });
     });
 
     it("strips trailing slashes from baseUrl", async () => {
