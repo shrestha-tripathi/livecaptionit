@@ -37,7 +37,7 @@ const faqJsonLd = {
       name: "Can I try it without picking a tab or granting microphone access?",
       acceptedAnswer: {
         "@type": "Answer",
-        text: `<p>Yes. Click "Try with sample audio · no setup" on the home page. It plays a short bundled audio clip through the same pipeline that captions your real audio — no permission prompts. Useful to see how the rolling-window captions feel, judge whether the model picker tier (tiny/base/small) you've chosen is fast enough on your device, or just confirm everything works before you commit to picking a tab.</p>`,
+        text: `<p>Yes. Click "Try with sample audio · no setup" on the home page. It plays a short bundled audio clip through the same pipeline that captions your real audio — no permission prompts. Useful to see how the rolling-window captions feel, judge whether your chosen model tier (tiny / base / small / large turbo) is fast enough on your device, or just confirm everything works before you commit to picking a tab.</p>`,
       },
     },
     {
@@ -45,7 +45,7 @@ const faqJsonLd = {
       name: "Which browsers are supported?",
       acceptedAnswer: {
         "@type": "Answer",
-        text: `<p>Tab/screen capture mode needs Chrome, Edge, or Brave 116+ on desktop. Microphone-only mode works in all modern browsers (Firefox + Safari included). The floating picture-in-picture window is Chromium-only for now. Mobile browsers don't support screen capture, so ${site.name} is desktop-first.</p>`,
+        text: `<p>Tab/screen capture mode needs Chrome, Edge, or Brave 116+ on desktop. Microphone-only mode works in all modern browsers (Firefox + Safari included) including mobile — point your phone's mic at any audio source. The floating picture-in-picture window is Chromium-only desktop for now. On mobile, captions appear inline on the page instead.</p>`,
       },
     },
     {
@@ -101,7 +101,31 @@ const faqJsonLd = {
       name: "Can it tell who is speaking? (speaker diarization)",
       acceptedAnswer: {
         "@type": "Answer",
-        text: `<p>Not yet — and honestly, it's harder than it sounds in a browser. When you capture a tab, every speaker arrives as one mono audio stream at similar volume, so distinguishing "Speaker A" from "Speaker B" needs a separate voice-fingerprinting model (~300MB) that we haven't shipped to keep ${site.name} fast and lightweight. A future release may split paragraphs on long pauses (a cheap approximation that doesn't claim speaker identity). For now, the transcript is one continuous stream of text.</p>`,
+        text: `<p>Not yet — and honestly, it's harder than it sounds in a browser. When you capture a tab, every speaker arrives as one mono audio stream at similar volume, so distinguishing "Speaker A" from "Speaker B" needs a separate voice-fingerprinting model (~300MB) that we haven't shipped to keep ${site.name} fast and lightweight. What we DO ship: <strong>turn detection</strong> — if there's silence for ≥1.5s, captions start a fresh paragraph, which reads like meeting notes (one paragraph ≈ one person's turn) even without naming the speakers. Real diarization is on the v0.5+ roadmap.</p>`,
+      },
+    },
+    {
+      "@type": "Question",
+      name: "Can I teach it words it usually mishears?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: `<p>Yes. The "Custom vocabulary" panel on the home page lets you list proper nouns, technical terms, or names you want preserved (e.g. <code>kubectl, NeurIPS, Aishwarya, ₹</code>). They're fed to Whisper as an initial prompt so the decoder is primed to recognize them with correct spelling and casing. Up to 200 characters. Works for any language Whisper supports.</p>`,
+      },
+    },
+    {
+      "@type": "Question",
+      name: "Can I share a transcript with someone without uploading it?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: `<p>Yes. After Stop, click the Share button next to the download options. ${site.name} gzip-compresses the transcript and packs it into the URL itself (no upload, no server) — your friend opens the link and sees the full session viewer with all download options. Works for transcripts up to ~16 KB (a few minutes of speech); longer sessions get a "use Export instead" toast.</p>`,
+      },
+    },
+    {
+      "@type": "Question",
+      name: "Can I install it as an app?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: `<p>Yes. ${site.name} is a Progressive Web App — Chrome, Edge, and Brave show an install pill on the home page that adds it to your Start menu / Applications / Home Screen. On iOS Safari, use Share → Add to Home Screen. Installed mode opens in its own window (no browser chrome), which makes the floating PiP feel like a native overlay app.</p>`,
       },
     },
   ],
@@ -135,7 +159,7 @@ const faqJsonLd = {
     </div>
 
     {/* ─── 3-step explainer ─── */}
-    <section class="mt-20 max-w-4xl mx-auto px-4 sm:px-6">
+    <section class="mt-12 max-w-4xl mx-auto px-4 sm:px-6">
       <h2 class="text-2xl font-bold tracking-tight text-center">How it works</h2>
       <div class="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-4">
         {[

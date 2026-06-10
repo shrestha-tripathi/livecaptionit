@@ -183,8 +183,9 @@ export function createWhisperClient(workerUrl = "/whisper-worker.js"): WhisperCl
         worker.postMessage({ type: "init", model });
       });
     },
-    transcribe(audio: Float32Array) {
-      return client.transcribeWindow(audio).then((r) => r.text);
+    async transcribe(audio: Float32Array): Promise<string> {
+      const r = await client.transcribeWindow(audio);
+      return r.text;
     },
     transcribeWindow(audio: Float32Array) {
       return new Promise<WindowResult>((resolve, reject) => {
