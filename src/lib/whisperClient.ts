@@ -21,6 +21,10 @@ export interface WhisperClient {
   transcribe: (audio: Float32Array) => Promise<string>;
   /** Streaming transcription. Returns text + wall-clock inference duration. */
   transcribeWindow: (audio: Float32Array) => Promise<WindowResult>;
+  /** v0.4.3 — bias decoder toward custom vocabulary. Pass an empty
+   *  string to clear. Capped at 200 chars worker-side. Safe to call
+   *  before init() or mid-session. */
+  setVocabulary: (text: string) => void;
   dispose: () => void;
   onStatus: (cb: (s: WhisperStatus) => void) => void;
 }
@@ -178,6 +182,9 @@ export function createWhisperClient(workerUrl = "/whisper-worker.js"): WhisperCl
         // Transferable: surrender ownership of buffer to worker for zero-copy
         worker.postMessage({ type: "transcribe", audio, id }, [audio.buffer]);
       });
+    },
+    setVocabulary(text: string) {
+      worker.postMessage({ type: "setVocabulary", text });
     },
     dispose() {
       worker.postMessage({ type: "dispose" });
