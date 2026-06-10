@@ -116,11 +116,24 @@ const allJsonLd = [...baseJsonLd, ...jsonLd];
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
+      id="cp-font-stylesheet"
       rel="preload"
       as="style"
       href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap"
-      onload="this.onload=null;this.rel='stylesheet'"
     />
+    <script is:inline>
+      // Promote the font preload to a real stylesheet once it's loaded.
+      // Kept out of the inline onload= attribute so astro-check doesn't
+      // false-positive on TS-as-JSX parsing of `this.onload=null;this.rel=...`.
+      (function () {
+        var l = document.getElementById("cp-font-stylesheet");
+        if (!l) return;
+        l.addEventListener("load", function once() {
+          l.removeEventListener("load", once);
+          l.rel = "stylesheet";
+        });
+      })();
+    </script>
     <noscript>
       <link
         href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap"

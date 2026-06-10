@@ -115,7 +115,9 @@ const SILENCE_RESET_SECONDS = 2.5; // sustained silence longer than this → wip
  *  most natural conversational pauses produce paragraph breaks BEFORE
  *  the buffer-reset guard fires. */
 const TURN_GAP_SECONDS = 1.5;
-const HALLUCINATION_MAX_REPEAT = 4; // kept in sync with DEFAULT_REPEAT_THRESHOLD in lib/hallucination.ts — bump both together if the threshold needs tuning
+// HALLUCINATION_MAX_REPEAT = 4 — kept in sync with DEFAULT_REPEAT_THRESHOLD in
+// lib/hallucination.ts (single source of truth lives there now). Bump both if
+// the threshold needs tuning. Constant kept as a documentation reference only.
 const INLINE_PREF_KEY = "livecaptionit:inline-pref";
 const PIP_PREFS_KEY = "livecaptionit:pip-prefs";
 const MODEL_PREF_KEY = "livecaptionit:model-pref";

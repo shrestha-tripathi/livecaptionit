@@ -5,7 +5,7 @@
  * librsvg (sharp's renderer) doesn't support oklch() — substitute hex for raster.
  * The source favicon.svg keeps oklch() for browsers (full color fidelity).
  */
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
