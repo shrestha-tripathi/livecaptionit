@@ -545,7 +545,14 @@
       </div>
       <footer class="px-5 py-3 border-t border-[var(--color-border)] text-[11px] text-[var(--color-fg-subtle)] flex justify-between items-center">
         <span>Shortcuts disabled while typing</span>
-        <button type="submit" class="px-3 py-1 rounded-md bg-[var(--color-brand)] text-white text-xs font-medium hover:bg-[var(--color-brand-strong)] transition-colors">Close</button>
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            id="cp-replay-tour-btn"
+            class="px-3 py-1 rounded-md text-xs font-medium text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-surface-strong)] transition-colors"
+          >Replay tour</button>
+          <button type="submit" class="px-3 py-1 rounded-md bg-[var(--color-brand)] text-white text-xs font-medium hover:bg-[var(--color-brand-strong)] transition-colors">Close</button>
+        </div>
       </footer>
     </form>
   </dialog>
