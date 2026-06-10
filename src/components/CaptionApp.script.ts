@@ -50,6 +50,7 @@ import {
   type StoredSession,
   type SessionSource,
 } from "../lib/sessionStore";
+import { searchSessions, debounce } from "../lib/sessionSearch";
 import {
   createWhisperClient,
   AVAILABLE_MODELS,
@@ -269,6 +270,10 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
   const historyPanel = rootEl.querySelector<HTMLDivElement>("#cp-history-panel")!;
   const historyList = rootEl.querySelector<HTMLUListElement>("#cp-history-list")!;
   const historyClearBtn = rootEl.querySelector<HTMLButtonElement>("#cp-history-clear")!;
+  // v0.4.2 — session search UI refs
+  const historySearchWrap = rootEl.querySelector<HTMLDivElement>("#cp-history-search-wrap")!;
+  const historySearchInput = rootEl.querySelector<HTMLInputElement>("#cp-history-search")!;
+  const historyEmpty = rootEl.querySelector<HTMLParagraphElement>("#cp-history-empty")!;
   const sessionViewDialog = rootEl.querySelector<HTMLDialogElement>("#cp-session-view")!;
   const sessionViewMeta = rootEl.querySelector<HTMLSpanElement>("#cp-session-view-meta")!;
   const sessionViewBody = rootEl.querySelector<HTMLDivElement>("#cp-session-view-body")!;
@@ -1387,6 +1392,12 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     return "Tab";
   }
 
+  /** v0.4.2: cached snapshot of the most recent listSessions() result.
+   *  applySearchFilter() reads from here so keystrokes don't hammer IDB. */
+  let cachedSessions: StoredSession[] = [];
+  /** v0.4.2: current search query (lowercased, debounced from input). */
+  let currentQuery = "";
+
   /** Fetch sessions + repopulate the Recent panel. Idempotent. */
   async function renderHistory() {
     let sessions: StoredSession[];
@@ -1397,14 +1408,40 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
       historyPanel.classList.add("hidden");
       return;
     }
-    if (sessions.length === 0) {
+    cachedSessions = sessions;
+    applySearchFilter();
+  }
+
+  /** v0.4.2: re-render the visible history list from `cachedSessions`
+   *  filtered by `currentQuery`. Cheap — no IDB access, just an Array filter.
+   *  Also manages: panel show/hide, search input visibility (≥3 session
+   *  threshold so the search box doesn't add friction on fresh installs),
+   *  and the empty-state messaging (no sessions vs no-match). */
+  function applySearchFilter() {
+    if (cachedSessions.length === 0) {
       historyPanel.classList.add("hidden");
       historyList.innerHTML = "";
+      historyEmpty.classList.add("hidden");
+      historySearchWrap.classList.add("hidden");
+      // Reset search state so a future post-recording panel reopen starts clean.
+      currentQuery = "";
+      historySearchInput.value = "";
       return;
     }
     historyPanel.classList.remove("hidden");
-    // Render top 5 in the list (compact panel) — user can clear to see fewer.
-    const shown = sessions.slice(0, 5);
+    // Search input only shows once we have enough sessions for it to be
+    // useful — under 3 entries the user can just scan the list.
+    historySearchWrap.classList.toggle("hidden", cachedSessions.length < 3);
+
+    const matched = searchSessions(cachedSessions, currentQuery);
+    if (matched.length === 0) {
+      historyList.innerHTML = "";
+      historyEmpty.classList.remove("hidden");
+      return;
+    }
+    historyEmpty.classList.add("hidden");
+    // Render top 5 of the filtered set (compact panel).
+    const shown = matched.slice(0, 5);
     historyList.innerHTML = shown
       .map((s) => {
         const meta = `${relativeTime(s.startedAt)} · ${sourceLabelFor(s.source)}`;
@@ -1429,6 +1466,18 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
       });
     });
   }
+
+  // v0.4.2: search input — debounced so we re-filter at most ~6 times/sec
+  // during sustained typing. Filtering is pure-functional + cached, so
+  // even without debounce this would be cheap; debounce just avoids
+  // visual flicker as the user types.
+  const onSearchInput = debounce((q: string) => {
+    currentQuery = q;
+    applySearchFilter();
+  }, 150);
+  historySearchInput.addEventListener("input", (e) => {
+    onSearchInput((e.currentTarget as HTMLInputElement).value);
+  });
 
   /** Open the viewer dialog with the given session id. */
   async function viewSession(id: string) {

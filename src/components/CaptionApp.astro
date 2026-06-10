@@ -77,9 +77,28 @@
           class="text-[10px] font-normal normal-case tracking-normal text-[var(--color-fg-subtle)] hover:text-[var(--color-fg-muted)] transition-colors"
         >Clear all</button>
       </header>
+      {/* v0.4.2: search input — auto-hidden by script.ts when ≤2 sessions exist
+          (search is friction with that few entries). */}
+      <div id="cp-history-search-wrap" class="hidden px-4 pt-2.5 pb-1">
+        <label class="block">
+          <span class="sr-only">Search sessions</span>
+          <input
+            id="cp-history-search"
+            type="search"
+            placeholder="Search transcripts…"
+            autocomplete="off"
+            spellcheck="false"
+            class="w-full text-xs px-2.5 py-1.5 rounded-md bg-[var(--color-bg)] text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)] border border-[var(--color-border)] focus:outline-none focus:border-[var(--color-brand)] transition-colors"
+          />
+        </label>
+      </div>
       <ul id="cp-history-list" class="divide-y divide-[var(--color-border)]">
         {/* Filled dynamically by CaptionApp.script.ts */}
       </ul>
+      {/* v0.4.2: empty-state for search no-match (script.ts toggles via .hidden) */}
+      <p id="cp-history-empty" class="hidden px-4 py-3 text-xs italic text-[var(--color-fg-subtle)]">
+        No sessions match — try another search.
+      </p>
     </div>
 
     <div class="mt-4 flex justify-center">
