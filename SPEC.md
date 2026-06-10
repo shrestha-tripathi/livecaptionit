@@ -1248,13 +1248,18 @@ Active-session keyboard shortcuts. On idle screen, just one shortcut.
 | Context | Key | Action |
 |---|---|---|
 | Idle | `Enter` | Click Start (matches "primary action on enter" convention) |
-| Active (live) | `Space` | Pause/resume capture (mutes the worker tick — but keeps audio capture buffer accumulating; new shortcut, see implementation) |
 | Active (live) | `Escape` | Stop captures (same as Stop button) |
 | Active (live) | `P` | Pop out to PiP (no-op if already in PiP) |
 | Active (live, in PiP) | `P` | Close PiP, return to inline |
 | Stopped | `R` | Start new (same as "Start new" button) |
 | Stopped | `D` | Download last transcript (.txt) |
 | Anywhere | `?` | Toggle keyboard shortcuts help overlay |
+
+**Deferred to v0.4.1:** `Space` pause/resume capture. Pausing without
+re-prompting the picker requires exposing `AudioContext.suspend()` /
+`resume()` through a new `CaptureHandle.pause()` / `resume()` API.
+That's a meaningful audioCapture refactor, kept out of this commit to
+hold the "one feature = one commit" line.
 
 ### UI
 

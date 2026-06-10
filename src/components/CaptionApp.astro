@@ -404,6 +404,60 @@
   <div id="cp-pip-placeholder" class="hidden py-8 text-center text-sm text-[var(--color-fg-subtle)] italic">
     Captions are showing in the floating window. Close it to bring them back here.
   </div>
+
+  {/* ── Keyboard shortcuts help (v0.4.0) ── */}
+  <dialog
+    id="cp-shortcuts-help"
+    class="rounded-xl shadow-line bg-[var(--color-surface)] text-[var(--color-fg)] p-0 max-w-md w-[92vw] backdrop:bg-black/40"
+  >
+    <form method="dialog" class="contents">
+      <header class="flex items-center justify-between px-5 py-4 border-b border-[var(--color-border)]">
+        <h3 class="text-base font-semibold tracking-tight">Keyboard shortcuts</h3>
+        <button
+          type="submit"
+          class="text-sm text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] transition-colors"
+          aria-label="Close"
+        >✕</button>
+      </header>
+      <div class="px-5 py-4 text-sm space-y-4">
+        <section>
+          <h4 class="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-fg-muted)] mb-2">Capture</h4>
+          <ul class="space-y-1">
+            <li class="flex items-center justify-between gap-4"><span>Stop capture</span><kbd class="cp-kbd">Esc</kbd></li>
+          </ul>
+        </section>
+        <section>
+          <h4 class="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-fg-muted)] mb-2">Window</h4>
+          <ul class="space-y-1">
+            <li class="flex items-center justify-between gap-4"><span>Pop out / close pop-out</span><kbd class="cp-kbd">P</kbd></li>
+          </ul>
+        </section>
+        <section>
+          <h4 class="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-fg-muted)] mb-2">After stop</h4>
+          <ul class="space-y-1">
+            <li class="flex items-center justify-between gap-4"><span>Start new session</span><kbd class="cp-kbd">R</kbd></li>
+            <li class="flex items-center justify-between gap-4"><span>Download transcript (.txt)</span><kbd class="cp-kbd">D</kbd></li>
+          </ul>
+        </section>
+        <section>
+          <h4 class="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-fg-muted)] mb-2">Idle</h4>
+          <ul class="space-y-1">
+            <li class="flex items-center justify-between gap-4"><span>Start captions</span><kbd class="cp-kbd">Enter</kbd></li>
+          </ul>
+        </section>
+        <section>
+          <h4 class="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-fg-muted)] mb-2">Help</h4>
+          <ul class="space-y-1">
+            <li class="flex items-center justify-between gap-4"><span>Toggle this overlay</span><kbd class="cp-kbd">?</kbd></li>
+          </ul>
+        </section>
+      </div>
+      <footer class="px-5 py-3 border-t border-[var(--color-border)] text-[11px] text-[var(--color-fg-subtle)] flex justify-between items-center">
+        <span>Shortcuts disabled while typing</span>
+        <button type="submit" class="px-3 py-1 rounded-md bg-[var(--color-brand)] text-white text-xs font-medium hover:bg-[var(--color-brand-strong)] transition-colors">Close</button>
+      </footer>
+    </form>
+  </dialog>
 </section>
 
 <script src="./CaptionApp.script.ts"></script>

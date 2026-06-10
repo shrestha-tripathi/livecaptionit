@@ -37,6 +37,11 @@ import {
 } from "../lib/audioCapture";
 import { startSampleCapture } from "../lib/sampleFeed";
 import {
+  install as installShortcuts,
+  type Shortcut,
+  type ShortcutContext,
+} from "../lib/shortcuts";
+import {
   createWhisperClient,
   AVAILABLE_MODELS,
   DEFAULT_MODEL_ID,
@@ -249,6 +254,8 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
   const styleResetBtn = rootEl.querySelector<HTMLButtonElement>("#cp-style-reset")!;
   const downloadBar = rootEl.querySelector<HTMLDivElement>("#cp-download-bar")!;
   const dlTxtBtn = rootEl.querySelector<HTMLButtonElement>("#cp-dl-txt")!;
+  // Shortcuts dialog lives at the section root, not inside .cp-active panel.
+  const shortcutsHelpDialog = rootEl.querySelector<HTMLDialogElement>("#cp-shortcuts-help")!;
   const dlVttBtn = rootEl.querySelector<HTMLButtonElement>("#cp-dl-vtt")!;
   const dlSrtBtn = rootEl.querySelector<HTMLButtonElement>("#cp-dl-srt")!;
   const dlClearBtn = rootEl.querySelector<HTMLButtonElement>("#cp-dl-clear")!;
@@ -524,6 +531,11 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
       pipPlaceholder.classList.add("hidden");
       pipBtn.classList.remove("hidden");
     }
+    // v0.4.0: also mirror keyboard shortcuts into the PiP window's document
+    // so Esc/P inside the floating window work as expected. When inPip is
+    // true and pipHandle is set, install on pipHandle.pipWindow.document;
+    // otherwise uninstall (close cleanup).
+    setPipShortcuts(inPip && pipHandle ? pipHandle : null);
   }
 
   function setState(state: AppState) {
@@ -532,7 +544,11 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     panels.loading.classList.toggle("hidden", state !== "loading");
     panels.active.classList.toggle("hidden", state !== "active");
     panels.error.classList.toggle("hidden", state !== "error");
+    currentState = state;
   }
+  /** Cached for getShortcutContext() — the source of truth is the dataset
+   *  attribute but reading it on every keydown adds overhead. */
+  let currentState: AppState = "idle";
 
   /** Active-panel substate: "live" while captioning, "stopped" after Stop
    *  when transcript has content (so user can still see history + download).
@@ -1109,6 +1125,85 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
   // ── Event wiring ──
   startBtn.addEventListener("click", () => void startPipeline());
   sampleBtn.addEventListener("click", () => void startSampleSession());
+
+  // ── Keyboard shortcuts (v0.4.0) ──
+  function getShortcutContext(): ShortcutContext {
+    if (currentState === "loading") return "loading";
+    if (currentState === "active") {
+      return currentSubstate === "stopped" ? "active-stopped" : "active-live";
+    }
+    return "idle";
+  }
+  function toggleShortcutsHelp() {
+    if (shortcutsHelpDialog.open) shortcutsHelpDialog.close();
+    else shortcutsHelpDialog.showModal();
+  }
+  const SHORTCUTS: Shortcut[] = [
+    {
+      key: "Enter",
+      contexts: ["idle"],
+      label: "Start captions",
+      section: "Navigation",
+      handler: () => startBtn.click(),
+    },
+    {
+      key: "Escape",
+      contexts: ["active-live"],
+      label: "Stop capture",
+      section: "Capture",
+      handler: () => stopBtn.click(),
+    },
+    {
+      key: "p",
+      contexts: ["active-live"],
+      label: "Pop out / close pop-out",
+      section: "Window",
+      handler: () => pipBtn.click(),
+    },
+    {
+      key: "r",
+      contexts: ["active-stopped"],
+      label: "Start new session",
+      section: "Navigation",
+      handler: () => restartBtn.click(),
+    },
+    {
+      key: "d",
+      contexts: ["active-stopped"],
+      label: "Download transcript (.txt)",
+      section: "Navigation",
+      handler: () => dlTxtBtn.click(),
+    },
+    {
+      key: "?",
+      contexts: [], // always
+      label: "Toggle help",
+      section: "Help",
+      handler: toggleShortcutsHelp,
+    },
+  ];
+  // Always install on the main document.
+  installShortcuts(document, SHORTCUTS, getShortcutContext);
+  /** Currently-installed PiP shortcut uninstaller. Resetting it lets us
+   *  cleanly swap when PiP closes + reopens during one page session. */
+  let pipShortcutsUninstall: (() => void) | null = null;
+  /** Install/uninstall keyboard shortcuts on the PiP window document.
+   *  Called from setPipMode(true/false). When PiP is focused, keydown
+   *  events fire on pipWindow.document only — without this, Esc/P inside
+   *  the floating window would do nothing. */
+  function setPipShortcuts(handle: { pipWindow: Window } | null) {
+    if (pipShortcutsUninstall) {
+      pipShortcutsUninstall();
+      pipShortcutsUninstall = null;
+    }
+    if (handle) {
+      pipShortcutsUninstall = installShortcuts(
+        handle.pipWindow.document,
+        SHORTCUTS,
+        getShortcutContext,
+      );
+    }
+  }
   stopBtn.addEventListener("click", () => {
     if (currentSubstate === "stopped") {
       // "Done" — user has reviewed/downloaded transcript, ready to go home.
