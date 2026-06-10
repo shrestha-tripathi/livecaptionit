@@ -55,6 +55,7 @@ import {
 } from "../lib/sessionStore";
 import { searchSessions, debounce } from "../lib/sessionSearch";
 import { toast } from "../lib/toast";
+import { initErrorMonitor, recordError } from "../lib/errorMonitor";
 import {
   createWhisperClient,
   AVAILABLE_MODELS,
@@ -220,6 +221,10 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
 }
 
 (function init() {
+  // v0.4.3: install global error handlers + expose __lcDebugErrors().
+  // Safe to call before DOM ready.
+  initErrorMonitor();
+
   const root = document.getElementById("caption-app");
   if (!root) return;
   // Narrow for closures: capture as non-null after the guard
@@ -858,7 +863,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
         renderLiveLine("");
       }
     } catch (e) {
-      console.warn("[LiveCaptionIt] tick failed:", e);
+      recordError(e, "whisper", { ctx: { phase: "tick" } });
     } finally {
       inFlight = false;
       scheduleNextTick();
@@ -927,7 +932,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
         }
       } catch (e) {
         // PiP open failed — fall back to inline rendering, don't abort
-        console.warn("[LiveCaptionIt] PiP open failed, falling back to inline:", e);
+        recordError(e, "pip", { ctx: { fallback: "inline" } });
         pipHandle = null;
       }
     }
@@ -1160,7 +1165,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
         })
           .then(() => renderHistory())
           .catch((err) => {
-            console.warn("[LiveCaptionIt] sessionStore.saveSession failed:", err);
+            recordError(err, "sessionStore", { ctx: { op: "saveSession" } });
           });
       }
     } else {
@@ -1198,7 +1203,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
       });
       setPipMode(true);
     } catch (e) {
-      console.error("[LiveCaptionIt] PiP open failed:", e);
+      recordError(e, "pip", { ctx: { op: "open" } });
       toast.error((e as Error).message);
     }
   }
@@ -1251,7 +1256,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
       try {
         await captureHandle.resume();
       } catch (err) {
-        console.warn("[LiveCaptionIt] resume failed:", err);
+        recordError(err, "capture", { ctx: { op: "resume" } });
       }
     } else {
       // Pause
@@ -1261,7 +1266,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
       try {
         await captureHandle.pause();
       } catch (err) {
-        console.warn("[LiveCaptionIt] pause failed:", err);
+        recordError(err, "capture", { ctx: { op: "pause" } });
       }
     }
   }
@@ -1413,7 +1418,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     try {
       sessions = await listSessions();
     } catch (err) {
-      console.warn("[LiveCaptionIt] sessionStore.listSessions failed:", err);
+      recordError(err, "sessionStore", { ctx: { op: "listSessions" } });
       historyPanel.classList.add("hidden");
       return;
     }
@@ -1502,7 +1507,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     try {
       s = await getSession(id);
     } catch (err) {
-      console.warn("[LiveCaptionIt] sessionStore.getSession failed:", err);
+      recordError(err, "sessionStore", { ctx: { op: "getSession" } });
       return;
     }
     if (!s) return;
@@ -1536,7 +1541,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
               : "application/x-subrip;charset=utf-8";
         downloadString(name, fn(s.transcript), mime);
       })
-      .catch((err) => console.warn("[LiveCaptionIt] download failed:", err));
+      .catch((err) => recordError(err, "export", { ctx: { op: "download" } }));
   }
 
   sessionViewDlTxt.addEventListener("click", () => downloadCurrentSession("txt"));
@@ -1550,13 +1555,13 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
         sessionViewDialog.close();
         void renderHistory();
       })
-      .catch((err) => console.warn("[LiveCaptionIt] delete failed:", err));
+      .catch((err) => recordError(err, "sessionStore", { ctx: { op: "delete" } }));
   });
   historyClearBtn.addEventListener("click", () => {
     if (!confirm("Clear all session history? This can't be undone.")) return;
     void clearAllSessions()
       .then(() => renderHistory())
-      .catch((err) => console.warn("[LiveCaptionIt] clearAll failed:", err));
+      .catch((err) => recordError(err, "sessionStore", { ctx: { op: "clearAll" } }));
   });
 
   // ── v0.4.2: JSON export / import ──
@@ -1579,7 +1584,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
           "application/json;charset=utf-8",
         );
       } catch (err) {
-        console.warn("[LiveCaptionIt] export failed:", err);
+        recordError(err, "export", { ctx: { op: "exportAll" } });
         toast.error(
           `Couldn't export sessions: ${err instanceof Error ? err.message : String(err)}`,
         );
@@ -1615,7 +1620,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
         if (result.pruned > 0) parts.push(`${result.pruned} pruned (over 20-session cap)`);
         toast.success(`Import complete: ${parts.join(", ")}.`);
       } catch (err) {
-        console.warn("[LiveCaptionIt] import failed:", err);
+        recordError(err, "import");
         toast.error(
           `Couldn't import sessions: ${err instanceof Error ? err.message : String(err)}`,
         );
