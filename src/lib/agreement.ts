@@ -56,14 +56,20 @@ export class Agreement<T> {
    *   items are considered equal iff `keyFn(a) === keyFn(b)`. For Words,
    *   pass `(w) => w.text.toLowerCase().trim()` so the same word text
    *   across overlapping windows (different tStartMs) is still agreed-on.
-   * @param tokenize - Optional splitter when the source data is a string
+   * @param tokenizeStr - Optional splitter when the source data is a string
    *   that needs to become `T[]`. For string items, this defaults to
    *   whitespace-split; for Word items it must be supplied by the caller
    *   (e.g. take the chunks array directly from the worker payload).
+   * @param displayFn - Optional extractor for the human-visible string
+   *   representation. Defaults to keyFn but distinct because the agreement
+   *   key is often normalized (lowercase, trimmed) for prefix-match
+   *   stability while the displayed text should preserve original case +
+   *   leading whitespace as Whisper emitted it.
    */
   constructor(
     private readonly keyFn: (item: T) => string,
     private readonly tokenizeStr?: (s: string) => T[],
+    private readonly displayFn: (item: T) => string = keyFn,
   ) {}
 
   /** Items confirmed and emitted, joined with single spaces (via keyFn). */
@@ -108,7 +114,7 @@ export class Agreement<T> {
       if (consistent) {
         const newItems = agreed.slice(this.committedItems.length);
         this.committedItems = agreed;
-        this.committed = this.committedItems.map(this.keyFn).join(" ");
+        this.committed = this.committedItems.map(this.displayFn).join(" ");
         this.newlyCommitted = newItems;
         this.samplesToTrim = Math.floor(newItems.length * AVG_SAMPLES_PER_WORD);
       }
@@ -125,7 +131,7 @@ export class Agreement<T> {
     this.liveItems = hypothesisAgreesWithCommitted
       ? items.slice(this.committedItems.length)
       : [];
-    this.liveLine = this.liveItems.map(this.keyFn).join(" ");
+    this.liveLine = this.liveItems.map(this.displayFn).join(" ");
 
     this.lastItems = items;
   }
@@ -164,11 +170,17 @@ export class StringAgreement extends Agreement<string> {
 /**
  * v0.4.8 — Word-typed Agreement for the streaming caption path. Agreement
  * is by case-insensitive trimmed text so the same word across overlapping
- * windows (different tStartMs) is correctly identified. Preserves timing
- * + future confidence values through commit promotion.
+ * windows (different tStartMs) is correctly identified. Display preserves
+ * the original Word.text exactly (including original case + leading space)
+ * so user-visible captions look identical to v0.4.7. Preserves timing +
+ * future confidence values through commit promotion.
  */
 export class WordAgreement extends Agreement<Word> {
   constructor() {
-    super((w) => w.text.toLowerCase().trim());
+    super(
+      (w) => w.text.toLowerCase().trim(),  // agreement key (case-insensitive)
+      undefined,                            // no string-tokenizer (Word callers always pre-tokenize)
+      (w) => w.text.trim(),                 // display (case-preserving, trims leading space)
+    );
   }
 }

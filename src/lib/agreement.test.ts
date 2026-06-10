@@ -174,14 +174,17 @@ describe("WordAgreement (LocalAgreement-2 over Word[])", () => {
     expect(a.liveItems[0].tStartMs).toBe(940);
   });
 
-  it("case-insensitive + trim agreement key (text != exact match still agrees)", () => {
+  it("case-insensitive agreement key, case-preserving display", () => {
     // Whisper sometimes capitalizes or adds leading-space differently across
     // windows. The WordAgreement keyFn normalizes to lowercase + trim so
-    // these are considered the same word.
+    // these are considered the same word — but the display string preserves
+    // the FIRST observation's text exactly (no silent lowercasing of the
+    // visible captions).
     a.ingest([w("Hello", 0, 420)]);
     a.ingest([w(" hello", 100, 520), w("world", 520, 940)]);
-    expect(a.committed).toBe("hello"); // joined via keyFn output
+    expect(a.committed).toBe("Hello"); // case preserved from first tick
     expect(a.committedItems).toHaveLength(1);
+    expect(a.committedItems[0].text).toBe("Hello");
   });
 
   it("monotonicity holds on Word inputs (committed Words never retract)", () => {
