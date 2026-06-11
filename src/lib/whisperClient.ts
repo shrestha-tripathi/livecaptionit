@@ -188,7 +188,7 @@ let _nextId = 1;
 // up immediately. Routine model-registry edits in whisperClient.ts
 // don't need a bump (those live in the page bundle, which has hashed
 // filenames and busts itself).
-const WORKER_VERSION = 2; // v0.5.1: mobile WASM + forceDevice support
+const WORKER_VERSION = 3; // v0.5.3: explicit q4 dtype on WASM path
 
 export function createWhisperClient(workerUrl = `/whisper-worker.js?v=${WORKER_VERSION}`): WhisperClient {
   const worker = new Worker(workerUrl, { type: "module" });
