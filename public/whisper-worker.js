@@ -167,18 +167,49 @@ async function init(model = DEFAULT_MODEL, opts = {}) {
     });
   }
 
-  // WASM fallback — uses default q8 quantization, works everywhere.
+  // WASM fallback / forced path.
+  //
+  // v0.5.3 — explicit q4 dtype on WASM. Previously we passed no `dtype`
+  // and let transformers.js pick its default — which for tiny on WASM
+  // loaded the fp32 encoder (~25 MB on disk, ~80 MB peak in WASM heap
+  // during InferenceSession construction). On iOS Safari/Chrome with
+  // a ~200-300 MB per-tab WebKit budget, that peak crossed the jetsam
+  // threshold and the OS killed the tab silently — appearing to the
+  // user as "page crashed after model loaded to 100%".
+  //
+  // Forcing q4 on both encoder + decoder cuts the in-heap peak to
+  // ~25-30 MB. Quality loss vs fp32 encoder is minor for tiny (1-2%
+  // WER bump on noisy audio) — acceptable trade for "actually works
+  // without crashing on iOS." Large-v3-turbo already uses q4f16 above.
+  //
   // For large-v3-turbo, bump WASM timeout to 360s — large model on
   // CPU WASM is slow to load (3-5 minutes on lower-end machines).
   try {
+    const wasmDtype = isLargeTurbo
+      ? { encoder_model: "q4f16", decoder_model_merged: "q4f16" }
+      : { encoder_model: "q4", decoder_model_merged: "q4" };
+    // v0.5.3 — bracket the pipeline() call with explicit logs. The
+    // construction step itself (loading ONNX weights into the WASM
+    // heap + building compute graphs + allocating activation buffers)
+    // is the highest-memory-pressure moment and can take 5-15s on
+    // mobile WASM. Silent during this window without these logs.
+    self.postMessage({
+      type: "loading",
+      message: `Constructing WASM InferenceSession (dtype=${JSON.stringify(wasmDtype)})…`,
+    });
     asr = await withTimeout(
       pipeline("automatic-speech-recognition", model, {
         device: "wasm",
+        dtype: wasmDtype,
         progress_callback,
       }),
       isLargeTurbo ? 360_000 : 180_000,
       "WASM model load (slower than WebGPU)",
     );
+    self.postMessage({
+      type: "loading",
+      message: "WASM InferenceSession constructed.",
+    });
     self.postMessage({ type: "ready", model: currentModel, device: "wasm" });
   } catch (wasmErr) {
     self.postMessage({
