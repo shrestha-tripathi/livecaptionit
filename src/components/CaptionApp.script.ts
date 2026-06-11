@@ -1485,7 +1485,11 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
 
     // ── Step 2: kick off worker init in the background (no await yet) ──
     // We want it loading WHILE the user is in the tab picker, not after.
-    whisper = createWhisperClient("/whisper-worker.js");
+    // v0.5.4: do NOT pass an explicit URL here — the default argument
+    // in createWhisperClient() embeds the `?v=${WORKER_VERSION}` query
+    // string that busts the CDN cache. Passing a bare URL bypasses
+    // that bust and forces returning users onto stale workers.
+    whisper = createWhisperClient();
     // v0.4.3 — push current vocabulary BEFORE init resolves so the first
     // transcribe call already has it. setVocabulary is safe pre-init (worker
     // just stores the string until transcribe needs it).
@@ -1500,6 +1504,19 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
         case "ready":
           whisperReady = true;
           if (debug.enabled) debug.log("worker ready", { device: s.device, model: s.model });
+          // v0.5.4 — defensive: if we asked for WASM on mobile but the worker
+          // came back with webgpu, we have a stale worker (pre-v0.5.1 cached
+          // by CDN/browser). The webgpu inference path on iOS WebKit OOMs.
+          // Surface this loudly in the debug panel so we can diagnose vs
+          // silently letting the tab die during first inference.
+          if (debug.enabled && isMobile && s.device === "webgpu") {
+            debug.error(
+              "STALE WORKER",
+              "Mobile session got device=webgpu but forceDevice=wasm was requested. " +
+                "This means the browser/CDN cached a pre-v0.5.1 worker that " +
+                "doesn't honor forceDevice. Hard-refresh (or wait 4h for CDN) to fix.",
+            );
+          }
           if (pipHandle || captureHandle) showCaptionStatus("Listening…");
           else showLoading(`Model ready (${s.device.toUpperCase()}). Asking for audio source…`);
           // Worker is ready — first tick will fire on the existing schedule
@@ -1625,7 +1642,11 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     setPipMode(false);
 
     // Kick off worker init in background (same model preference as live).
-    whisper = createWhisperClient("/whisper-worker.js");
+    // v0.5.4: do NOT pass an explicit URL here — the default argument
+    // in createWhisperClient() embeds the `?v=${WORKER_VERSION}` query
+    // string that busts the CDN cache. Passing a bare URL bypasses
+    // that bust and forces returning users onto stale workers.
+    whisper = createWhisperClient();
     // v0.4.3 — push current vocabulary BEFORE init (same as live path).
     whisper.setVocabulary(loadVocabulary());
     whisper.onStatus((s) => {
