@@ -35,6 +35,17 @@ env.useBrowserCache = true;
 let asr = null;
 let currentModel = "";
 
+// v0.5.5 — quantized ONNX exports (q4/q8) don't expose cross-attention
+// outputs, so transformers.js can't compute word-level timestamps. The
+// error message is exactly:
+//   "Model outputs must contain cross attentions to extract timestamps."
+// First inference detects this, sets the flag, and all subsequent calls
+// pass `return_timestamps: true` (segment-level) instead of "word".
+// Synthesizing pseudo-words from segments keeps the v0.5.0 features
+// (confidence tinting, transcript editor) operational with slightly
+// less precise per-word timing.
+let wordTimestampsBroken = false;
+
 // v0.4.3 — custom vocabulary biasing.
 // Whisper takes an `initial_prompt` string per call that's prepended to
 // the decoder context. Terms in the prompt are tokenized once and seen
@@ -104,6 +115,9 @@ async function init(model = DEFAULT_MODEL, opts = {}) {
     return;
   }
   currentModel = model;
+  // v0.5.5 — reset word-timestamps probe state on each init. Different
+  // model exports may have different cross-attention availability.
+  wordTimestampsBroken = false;
   const progress_callback = buildProgressCallback();
 
   // v0.4.3 — model-aware dtype selection.
@@ -228,52 +242,59 @@ async function transcribe(audio, id) {
   }
   const start = performance.now();
   try {
-    const result = await asr(audio, {
-      chunk_length_s: 30,
-      stride_length_s: 5,
-      // v0.4.8 — flipped from `false` to `"word"`. transformers.js now
-      // returns `{ text, chunks: [{ text, timestamp: [tStartSec, tEndSec] }] }`
-      // where each chunk corresponds to a Whisper-tokenized word. Adds
-      // ~5-15% to decode time; adaptive-tick logic on the parent absorbs
-      // the variance. Downstream code that only needs text reads
-      // `result.text` (unchanged shape); v0.5 features read `result.chunks`.
-      return_timestamps: "word",
-      language: "english",
-      task: "transcribe",
-      // Streaming-friendly decode: greedy + deterministic so the
-      // LocalAgreement-2 algorithm on the parent side can detect
-      // consistent prefixes across overlapping windows. Random or
-      // beam sampling would produce different text on identical input
-      // and never trigger a commit.
-      num_beams: 1,
-      temperature: 0,
-      // Anti-music-hallucination: Whisper has a known failure mode on
-      // rhythmic vocal audio where it locks onto a 2-3 word phrase and
-      // emits it 4-8 times in a row ("of thug of thug of thug ..." on
-      // music with sustained vocals). no_repeat_ngram_size forces the
-      // decoder to not emit any trigram that already appeared in the
-      // output — kills the pattern at decode time so we don't have to
-      // clean it up downstream. Set to 3 because:
-      //   - 2 is too aggressive (real speech repeats bigrams: "of the",
-      //     "and the", "in the" appear multiple times naturally)
-      //   - 4+ doesn't catch the "of thug" case
-      //   - 3 catches lyric loops without breaking natural speech.
-      // Belt-and-suspenders: a downstream looksHallucinated() filter in
-      // CaptionApp.script.ts still scans for residual patterns in case
-      // the decoder slips one past.
-      no_repeat_ngram_size: 3,
-      // v0.4.3 — vocabulary biasing. transformers.js accepts an
-      // `initial_prompt` string and tokenizes it internally before
-      // each transcribe call. Empty string = noop. We always pass
-      // it (even when empty) for shape consistency.
-      initial_prompt: vocabularyPrompt || undefined,
-    });
+    const result = await runAsrWithFallback(audio);
     const text = (result && result.text ? result.text : "").trim();
     const chunks = extractWordChunks(result);
     const durationMs = Math.round(performance.now() - start);
     self.postMessage({ type: "result", text, chunks, id, durationMs });
   } catch (e) {
     self.postMessage({ type: "error", message: (e && e.message) || String(e) });
+  }
+}
+
+// v0.5.5 — run asr() with automatic fallback when word-level timestamps
+// fail. q4/q8 quantized exports drop the cross-attention outputs that
+// transformers.js needs for `return_timestamps: "word"`. If we hit that
+// specific error, flip the session-wide flag and retry the SAME audio
+// with segment-level timestamps so the user still gets text out.
+//
+// The flag is sticky for the rest of the worker's life — once we know
+// this model export can't do word timestamps, no point asking again
+// every tick (which would emit a worker error every ~3s, garbage the
+// console, and waste a forward pass before each retry).
+async function runAsrWithFallback(audio) {
+  const baseOpts = {
+    chunk_length_s: 30,
+    stride_length_s: 5,
+    language: "english",
+    task: "transcribe",
+    num_beams: 1,
+    temperature: 0,
+    no_repeat_ngram_size: 3,
+    initial_prompt: vocabularyPrompt || undefined,
+  };
+  if (wordTimestampsBroken) {
+    // Already known-bad — go straight to segment mode, no retry needed.
+    return await asr(audio, { ...baseOpts, return_timestamps: true });
+  }
+  try {
+    return await asr(audio, { ...baseOpts, return_timestamps: "word" });
+  } catch (e) {
+    const msg = (e && e.message) || String(e);
+    if (/cross attentions/i.test(msg)) {
+      // q4/q8 quantized model — switch to segment timestamps for this
+      // session. Emit a one-time loading message so the parent / debug
+      // panel sees the transition; don't keep firing it every tick.
+      wordTimestampsBroken = true;
+      self.postMessage({
+        type: "loading",
+        message:
+          "Quantized model has no cross-attention; falling back to " +
+          "segment-level timestamps (per-word timing will be approximated).",
+      });
+      return await asr(audio, { ...baseOpts, return_timestamps: true });
+    }
+    throw e;
   }
 }
 
@@ -287,6 +308,14 @@ async function transcribe(audio, id) {
 //     Keep them — agreement still works on the text; trimming would
 //     break index alignment.
 // Returns Word[] in worker-payload shape: tStartMs/tEndMs (ms, integer).
+//
+// v0.5.5 — when wordTimestampsBroken is set, transformers.js returned
+// segment-level chunks (one chunk per ~10s phrase, not per word). We
+// SYNTHESIZE pseudo-words by splitting each segment on whitespace and
+// distributing the segment's timestamp uniformly across its words.
+// Per-word timing accuracy degrades from "actual Whisper word boundary"
+// to "linear interpolation across the segment" — usable for confidence
+// tinting and transcript editing, just less precise.
 function extractWordChunks(result) {
   if (!result || !Array.isArray(result.chunks)) return [];
   const out = [];
@@ -298,7 +327,32 @@ function extractWordChunks(result) {
     let tEndSec = Array.isArray(ts) && typeof ts[1] === "number" ? ts[1] : null;
     const tStartMs = tStartSec !== null ? Math.round(tStartSec * 1000) : prevEndMs;
     const tEndMs = tEndSec !== null ? Math.round(tEndSec * 1000) : tStartMs;
-    out.push({ text: c.text, tStartMs, tEndMs });
+    if (wordTimestampsBroken) {
+      // Segment mode: split into pseudo-words. A segment like "hello world how are you"
+      // gets 5 pseudo-words with linear-interpolated timestamps across the segment span.
+      // Preserve leading whitespace on words 2+ to keep the agreement-key behaviour
+      // identical to real word chunks (which always include their leading space).
+      const words = c.text.trim().split(/\s+/).filter(Boolean);
+      if (words.length === 0) continue;
+      if (words.length === 1) {
+        // Single-word segment — no interpolation needed.
+        out.push({ text: c.text, tStartMs, tEndMs });
+      } else {
+        const spanMs = Math.max(0, tEndMs - tStartMs);
+        const perWordMs = spanMs / words.length;
+        for (let i = 0; i < words.length; i++) {
+          const wStartMs = Math.round(tStartMs + i * perWordMs);
+          const wEndMs = Math.round(tStartMs + (i + 1) * perWordMs);
+          // Match real-word-chunk shape: word 0 keeps its original leading
+          // (segment may have led with a space anyway); subsequent words
+          // get a leading space prepended so detokenization stays correct.
+          const text = (i === 0 ? c.text.match(/^\s*/)[0] : " ") + words[i];
+          out.push({ text, tStartMs: wStartMs, tEndMs: wEndMs });
+        }
+      }
+    } else {
+      out.push({ text: c.text, tStartMs, tEndMs });
+    }
     prevEndMs = tEndMs;
   }
   return out;
@@ -316,6 +370,10 @@ self.onmessage = async (e) => {
     case "dispose":
       asr = null;
       currentModel = "";
+      // v0.5.5 — clear the word-timestamps flag so the next init() (which
+      // may load a different model with working cross-attention) starts
+      // fresh in word-timestamp mode.
+      wordTimestampsBroken = false;
       break;
     case "setVocabulary":
       // Cap at 200 chars to avoid crowding Whisper's decoder context.
