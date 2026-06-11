@@ -90,6 +90,7 @@ import {
 } from "../lib/whisperClient";
 import { openPip, isPipSupported, type PipHandle } from "../lib/pipClient";
 import { detectSupport, isMobileDevice } from "../lib/browserSupport";
+import { featureFlags } from "../lib/featureFlags";
 import { getDebugPanel } from "../lib/debugPanel";
 import { WordAgreement } from "../lib/agreement";
 import type { Word } from "../lib/word";
@@ -498,6 +499,12 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
   // ── Initial support detection ──
   const support = detectSupport();
   const isMobile = isMobileDevice();
+  // Mobile WebGPU is technically present (iOS Safari 18.2+, Chrome Android
+  // 121+) but unreliable: adapter probe can hang ~120s, GPU buffers fight
+  // the page heap, drivers crash. We force WASM on mobile by default. The
+  // build-time PUBLIC_ALLOW_MOBILE_WEBGPU flag opts a deploy into the
+  // WebGPU path for testing — see docs/BUILD_FLAGS.md.
+  const forceWasmOnMobile = isMobile && !featureFlags.allowMobileWebGPU;
   // v0.5.2 — diagnostic panel. Active only when ?debug=1 is in the URL.
   // Logs each lifecycle checkpoint so we can see EXACTLY where mobile
   // sessions fail without needing remote DevTools / desktop USB tooling.
@@ -506,6 +513,8 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
   if (debug.enabled) {
     debug.log("UA", navigator.userAgent);
     debug.log("isMobile", isMobile);
+    debug.log("flag PUBLIC_ALLOW_MOBILE_WEBGPU", featureFlags.allowMobileWebGPU);
+    debug.log("→ forceWasmOnMobile", forceWasmOnMobile);
     debug.log("viewport", `${window.innerWidth}x${window.innerHeight}`);
     debug.log("devicePixelRatio", window.devicePixelRatio);
     debug.log("support", {
@@ -1509,7 +1518,11 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
           // by CDN/browser). The webgpu inference path on iOS WebKit OOMs.
           // Surface this loudly in the debug panel so we can diagnose vs
           // silently letting the tab die during first inference.
-          if (debug.enabled && isMobile && s.device === "webgpu") {
+          //
+          // Skip this check when PUBLIC_ALLOW_MOBILE_WEBGPU is on — in that
+          // case `device === "webgpu"` on mobile is the intended outcome,
+          // not a stale-cache bug.
+          if (debug.enabled && forceWasmOnMobile && s.device === "webgpu") {
             debug.error(
               "STALE WORKER",
               "Mobile session got device=webgpu but forceDevice=wasm was requested. " +
@@ -1536,7 +1549,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
         source: currentSource,
         model: activeModel.id,
         hfId: activeModel.hfId,
-        forceWasm: isMobile,
+        forceWasm: forceWasmOnMobile,
       });
     }
     // v0.5.1: on mobile, force the worker to skip the WebGPU adapter
@@ -1545,9 +1558,12 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     // adapter, sometimes hangs, sometimes returns one that OOMs during
     // weight transfer. WASM is consistently slower but consistently
     // works. Desktop still tries WebGPU first.
+    //
+    // Build flag `PUBLIC_ALLOW_MOBILE_WEBGPU=true` lets a deploy opt
+    // back into mobile WebGPU for testing — see docs/BUILD_FLAGS.md.
     const initPromise = whisper.init(
       activeModel.hfId,
-      isMobile ? { forceDevice: "wasm" } : undefined,
+      forceWasmOnMobile ? { forceDevice: "wasm" } : undefined,
     ).catch((e) => {
       showError(`Couldn't load Whisper: ${(e as Error).message}`);
     });
@@ -1670,9 +1686,12 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     // adapter, sometimes hangs, sometimes returns one that OOMs during
     // weight transfer. WASM is consistently slower but consistently
     // works. Desktop still tries WebGPU first.
+    //
+    // Build flag `PUBLIC_ALLOW_MOBILE_WEBGPU=true` lets a deploy opt
+    // back into mobile WebGPU for testing — see docs/BUILD_FLAGS.md.
     const initPromise = whisper.init(
       activeModel.hfId,
-      isMobile ? { forceDevice: "wasm" } : undefined,
+      forceWasmOnMobile ? { forceDevice: "wasm" } : undefined,
     ).catch((e) => {
       showError(`Couldn't load Whisper: ${(e as Error).message}`);
     });
