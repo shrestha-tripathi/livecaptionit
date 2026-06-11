@@ -90,6 +90,7 @@ import {
 } from "../lib/whisperClient";
 import { openPip, isPipSupported, type PipHandle } from "../lib/pipClient";
 import { detectSupport, isMobileDevice } from "../lib/browserSupport";
+import { getDebugPanel } from "../lib/debugPanel";
 import { WordAgreement } from "../lib/agreement";
 import type { Word } from "../lib/word";
 import { looksHallucinated } from "../lib/hallucination";
@@ -468,6 +469,9 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
   const agreement = new WordAgreement();
   let tickTimer: number | null = null;
   let inFlight = false;
+  // v0.5.2 debug — count inferences so we can identify "crash on first
+  // inference" vs "crash on 5th inference" (different root causes).
+  let inferenceCount = 0;
   let nextTickMs = TICK_INTERVAL_MS;
   /** v0.4.1: paused state for Space pause/resume. When true the tick
    *  scheduler still re-arms but skips Whisper calls, and the active
@@ -494,6 +498,46 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
   // ── Initial support detection ──
   const support = detectSupport();
   const isMobile = isMobileDevice();
+  // v0.5.2 — diagnostic panel. Active only when ?debug=1 is in the URL.
+  // Logs each lifecycle checkpoint so we can see EXACTLY where mobile
+  // sessions fail without needing remote DevTools / desktop USB tooling.
+  // Zero perf cost when the URL flag isn't present (factory returns a stub).
+  const debug = getDebugPanel();
+  if (debug.enabled) {
+    debug.log("UA", navigator.userAgent);
+    debug.log("isMobile", isMobile);
+    debug.log("viewport", `${window.innerWidth}x${window.innerHeight}`);
+    debug.log("devicePixelRatio", window.devicePixelRatio);
+    debug.log("support", {
+      webgpu: support.webgpu,
+      displayMediaAudio: support.displayMediaAudio,
+      documentPip: support.documentPip,
+      audioContext: support.audioContext,
+      sharedArrayBuffer: support.sharedArrayBuffer,
+    });
+    try {
+      debug.log(
+        "stored model pref",
+        localStorage.getItem(MODEL_PREF_KEY) ?? "(none)",
+      );
+    } catch {
+      debug.log("stored model pref", "(localStorage blocked)");
+    }
+    // performance.memory only exists on Chromium-based browsers; not Safari.
+    // Useful for diagnosing Chrome Android specifically.
+    interface PerformanceWithMemory {
+      memory?: { usedJSHeapSize: number; totalJSHeapSize: number; jsHeapSizeLimit: number };
+    }
+    const mem = (performance as unknown as PerformanceWithMemory).memory;
+    if (mem) {
+      debug.log("JS heap", {
+        usedMB: Math.round(mem.usedJSHeapSize / 1024 / 1024),
+        limitMB: Math.round(mem.jsHeapSizeLimit / 1024 / 1024),
+      });
+    } else {
+      debug.log("JS heap", "(unavailable on this browser)");
+    }
+  }
   // Mark the document root for CSS-driven mobile tweaks (bigger tap targets,
   // hiding PiP-irrelevant UI). One class — global.css owns the visual rules.
   if (isMobile) {
@@ -1263,6 +1307,23 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     try {
       const audio = rolling.snapshot();
       const audioWasOverCap = rolling.isOverCap();
+      inferenceCount++;
+      const isFirstInference = inferenceCount === 1;
+      if (debug.enabled && isFirstInference) {
+        // First inference is the highest-memory-pressure moment of the
+        // session — encoder forward pass allocates ~3-5x the model weights
+        // in transient WASM heap. If iOS OOM-kills, it kills here. Log
+        // audio length + heap so we can correlate with crash reports.
+        interface PerformanceWithMemory {
+          memory?: { usedJSHeapSize: number; jsHeapSizeLimit: number };
+        }
+        const mem = (performance as unknown as PerformanceWithMemory).memory;
+        debug.log("first inference start", {
+          audioSec: Math.round(rolling.durationSeconds() * 10) / 10,
+          samples: audio.length,
+          heapMB: mem ? Math.round(mem.usedJSHeapSize / 1024 / 1024) : "n/a",
+        });
+      }
       // v0.4.8 — switched from transcribeWindow() (text only) to
       // transcribeWindow2() which exposes per-word chunks: Word[].
       // We pass chunks to agreement (WordAgreement) instead of the
@@ -1271,6 +1332,18 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
       // text is kept around for hallucination detection (looksHallucinated
       // works on strings) and as a fallback when chunks is empty.
       const { text, chunks, durationMs } = await whisper.transcribeWindow2(audio);
+      if (debug.enabled && isFirstInference) {
+        interface PerformanceWithMemory {
+          memory?: { usedJSHeapSize: number; jsHeapSizeLimit: number };
+        }
+        const mem = (performance as unknown as PerformanceWithMemory).memory;
+        debug.log("first inference done", {
+          durationMs,
+          textLen: text?.length ?? 0,
+          chunks: chunks?.length ?? 0,
+          heapMB: mem ? Math.round(mem.usedJSHeapSize / 1024 / 1024) : "n/a",
+        });
+      }
 
       // Adapt tick interval — never tick faster than 1.2× last inference,
       // never slower than MAX_TICK_MS. Keeps slow WebGPU/WASM devices
@@ -1346,6 +1419,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
 
     // Reset all streaming state from any previous run
     whisperReady = false;
+    inferenceCount = 0;
     rolling.reset();
     agreement.reset();
     stabilityTracker.reset();
@@ -1419,16 +1493,19 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     whisper.onStatus((s) => {
       switch (s.type) {
         case "loading":
+          if (debug.enabled) debug.log("worker loading", s.message);
           if (pipHandle || captureHandle) showCaptionStatus(s.message, s.progress);
           else showLoading(s.message, s.progress);
           break;
         case "ready":
           whisperReady = true;
+          if (debug.enabled) debug.log("worker ready", { device: s.device, model: s.model });
           if (pipHandle || captureHandle) showCaptionStatus("Listening…");
           else showLoading(`Model ready (${s.device.toUpperCase()}). Asking for audio source…`);
           // Worker is ready — first tick will fire on the existing schedule
           break;
         case "error":
+          if (debug.enabled) debug.error("worker error", s.message);
           showError(s.message);
           break;
       }
@@ -1437,6 +1514,14 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     // Re-read pref at start time so changes made in the prefs panel since
     // the page loaded take effect on this run.
     const activeModel = modelById(loadModelPref(isMobile));
+    if (debug.enabled) {
+      debug.log("start pipeline", {
+        source: currentSource,
+        model: activeModel.id,
+        hfId: activeModel.hfId,
+        forceWasm: isMobile,
+      });
+    }
     // v0.5.1: on mobile, force the worker to skip the WebGPU adapter
     // probe entirely. Mobile WebGPU was the silent 120s hang masquerading
     // as a page crash — Chrome Android sometimes returns a working
@@ -1519,6 +1604,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
 
     // Same reset as startPipeline.
     whisperReady = false;
+    inferenceCount = 0;
     rolling.reset();
     agreement.reset();
     stabilityTracker.reset();
@@ -1627,6 +1713,7 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
       pipHandle = null;
     }
     whisperReady = false;
+    inferenceCount = 0;
     inFlight = false;
     isPaused = false; // v0.4.1: stopping clears paused state
     pendingTurnBreak = false; // v0.4.3: turn detection cleared on stop
