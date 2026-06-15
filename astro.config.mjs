@@ -13,6 +13,11 @@ const siteUrl = /\.pages\.dev/i.test(rawSiteUrl)
 // https://astro.build/config
 export default defineConfig({
   site: siteUrl,
+  // "always" → built pages live at /foo/index.html and Astro.url.pathname
+  // carries the trailing slash, matching Cloudflare Pages' 308 /foo → /foo/
+  // behaviour. Keeps sitemap + canonical + internal links on the 200 URL
+  // (no redirect hop, no "Alternate page with canonical" warning in GSC).
+  trailingSlash: "always",
   vite: {
     plugins: [tailwindcss()],
     // Mirror the production _headers COOP/COEP setup so SharedArrayBuffer

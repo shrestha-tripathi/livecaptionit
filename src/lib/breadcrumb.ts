@@ -6,7 +6,7 @@
  * Pass additional `{name, path}` crumbs as spread args — paths are absolute site
  * paths joined to site.url.
  */
-import { site } from "../site.config";
+import { site, absoluteUrl } from "../site.config";
 
 export interface CrumbInput {
   name: string;
@@ -25,7 +25,9 @@ export function breadcrumb(...crumbs: CrumbInput[]) {
       "@type": "ListItem",
       position: i + 2,
       name: c.name,
-      item: new URL(c.path, site.url).toString(),
+      // absoluteUrl trailing-slashes the path so the breadcrumb item matches
+      // the page's own canonical URL (avoids a schema/canonical mismatch).
+      item: absoluteUrl(c.path),
     })),
   ];
 
