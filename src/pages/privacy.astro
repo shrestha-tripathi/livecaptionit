@@ -1,42 +1,189 @@
 ---
 import Layout from "../layouts/Layout.astro";
-import { site } from "../site.config";
+import { site, absoluteUrl } from "../site.config";
+
+/**
+ * /privacy — the LEGAL privacy policy (GDPR/CCPA structured), required for
+ * AdSense approval. Leads with the client-side moat (audio is transcribed
+ * on-device by Whisper, never uploaded) then layers the full legal structure:
+ * data controller, what is + isn't processed, the real third-party requests
+ * (Hugging Face model CDN, Google Fonts), cookies (GA4 + potential AdSense/
+ * DART), rights, retention, contact. All operator values come from
+ * site.config.ts. Nav + Footer are injected by Layout — don't add them here.
+ */
+
 const today = new Date().toISOString().slice(0, 10);
+
+const privacySchema = {
+  "@context": "https://schema.org",
+  "@type": "WebPage",
+  "@id": absoluteUrl("/privacy"),
+  name: `Privacy Policy — ${site.name}`,
+  url: absoluteUrl("/privacy"),
+  description: `How ${site.name} handles your data: audio is transcribed on your device by Whisper and never uploaded. Cookies, third parties, and your GDPR/CCPA rights.`,
+  dateModified: today,
+  isPartOf: { "@id": `${site.url}/#website` },
+  publisher: { "@id": `${site.url}/#organization` },
+};
 ---
-<Layout title="Privacy Policy" description={`Privacy policy for ${site.name}`}>
+
+<Layout
+  title="Privacy Policy"
+  description={`${site.name} privacy policy — your audio is transcribed on-device by Whisper and never uploaded. What we process, cookies, third parties, and your GDPR/CCPA rights.`}
+  jsonLd={[privacySchema]}
+>
   <main class="max-w-3xl mx-auto px-4 sm:px-6 pt-10 pb-16">
     <h1 class="text-3xl font-bold tracking-tight">Privacy Policy</h1>
     <p class="mt-2 text-sm text-[var(--color-fg-subtle)]">Last updated: {today}</p>
 
-    <div class="mt-6 space-y-5 text-[var(--color-fg-muted)] text-[15px] leading-relaxed">
-      <p>
-        <strong class="text-[var(--color-fg)]">{site.name}</strong> is a single-page web app that runs entirely in your browser. We take privacy seriously — the product itself is built around the principle that your data should never leave your device.
-      </p>
+    <p class="mt-6 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-subtle)] p-5 text-[15px] leading-relaxed text-[var(--color-fg-muted)]">
+      <strong class="font-semibold text-[var(--color-fg)]">The short version:</strong>
+      {site.name} transcribes audio entirely in your browser using the Whisper
+      speech-recognition model. Your audio and transcripts never leave your
+      device. The only data anyone processes is anonymous, aggregate website
+      analytics.
+    </p>
 
-      <h2 class="text-lg font-semibold text-[var(--color-fg)] mt-8">What data we process</h2>
-      <ul class="list-disc pl-5 space-y-2">
-        <li><strong class="text-[var(--color-fg)]">Audio</strong> from the source you pick (a browser tab, window, or screen). This audio is processed locally in your browser by the Whisper speech-recognition model. <strong>It is never sent to our servers or any third party.</strong> When you stop captioning, the audio stream ends and nothing is retained.</li>
-        <li><strong class="text-[var(--color-fg)]">Transcribed text</strong> appears in your browser. Your last 20 session transcripts (text only — never audio) are saved locally in your browser's IndexedDB so you can revisit and re-download them from the "Recent sessions" panel on the home page. <strong>We do not transmit or log any transcripts.</strong> Clear all history anytime via the panel's "Clear all" button, or per-session via the viewer.</li>
-        <li><strong class="text-[var(--color-fg)]">Caption + model preferences</strong> (theme, model tier, caption style, PiP window size, source preference) are saved in your browser's localStorage so settings stick between visits. This data stays on your device.</li>
-      </ul>
+    <div class="mt-8 space-y-8 text-[var(--color-fg-muted)] text-[15px] leading-relaxed">
+      <section>
+        <h2 class="text-lg font-semibold text-[var(--color-fg)]">1. Who we are</h2>
+        <p class="mt-3">
+          {site.name} (“we”, “us”, “our”) is a free, client-side web application
+          operated by {site.author} from {site.jurisdiction}. We act as the data
+          controller for the limited, non-content data described below. For any
+          privacy question, email
+          <a class="underline" href={`mailto:${site.contactEmail}`}>{site.contactEmail}</a>.
+        </p>
+      </section>
 
-      <h2 class="text-lg font-semibold text-[var(--color-fg)] mt-8">Third-party requests</h2>
-      <ul class="list-disc pl-5 space-y-2">
-        <li><strong class="text-[var(--color-fg)]">Hugging Face Hub</strong> — the first time you use {site.name}, your browser downloads the Whisper model file from Hugging Face's CDN. Subsequent visits use the browser cache. Hugging Face will see your IP address as part of standard HTTP request logging.</li>
-        <li><strong class="text-[var(--color-fg)]">Google Fonts</strong> — we use Geist + Geist Mono served from Google Fonts. Google receives standard HTTP request data (IP, user agent, referrer).</li>
-        {site.gaId && (
-          <li><strong class="text-[var(--color-fg)]">Google Analytics</strong> — we use GA4 to count anonymous page views. No personal data is collected. GA respects Do-Not-Track when set.</li>
-        )}
-      </ul>
+      <section>
+        <h2 class="text-lg font-semibold text-[var(--color-fg)]">2. Your audio never leaves your device</h2>
+        <p class="mt-3">
+          {site.name} is a fully client-side app. Everything below stays on your
+          device:
+        </p>
+        <ul class="mt-4 list-disc pl-5 space-y-2">
+          <li>
+            <strong class="text-[var(--color-fg)]">Audio</strong> from the source
+            you pick (a browser tab, window, or screen) is processed locally in
+            your browser by the Whisper speech-recognition model.
+            <strong>It is never sent to our servers or any third party.</strong>
+            When you stop captioning, the audio stream ends and nothing is retained.
+          </li>
+          <li>
+            <strong class="text-[var(--color-fg)]">Transcribed text</strong> appears
+            only in your browser. Your last 20 session transcripts (text only —
+            never audio) are saved locally in your browser's IndexedDB so you can
+            revisit and re-download them. <strong>We do not transmit or log any
+            transcripts.</strong> Clear them anytime via the “Recent sessions” panel.
+          </li>
+          <li>
+            <strong class="text-[var(--color-fg)]">Preferences</strong> (theme,
+            model tier, caption style, PiP window size, source preference) are
+            saved in your browser's localStorage so settings stick between visits.
+          </li>
+        </ul>
+        <p class="mt-4">
+          There is no server-side account, database, or upload. The app is static
+          files served from a content-delivery network — you can verify this in
+          your browser's Network tab while captioning.
+        </p>
+      </section>
 
-      <h2 class="text-lg font-semibold text-[var(--color-fg)] mt-8">Cookies</h2>
-      <p>{site.name} does not set any first-party cookies. The site uses browser <strong>localStorage</strong> (not cookies) to remember your preferences across visits — theme, model tier, caption style, source preference, custom vocabulary, keyboard shortcut overrides, PiP window size, onboarding-tour completion, and PWA install dismissal. All of this stays on your device; we never read it server-side because there is no server-side. Any cookies you may see in your browser come from third-party services listed above (analytics, fonts).</p>
+      <section>
+        <h2 class="text-lg font-semibold text-[var(--color-fg)]">3. Third-party requests</h2>
+        <ul class="mt-4 list-disc pl-5 space-y-2">
+          <li>
+            <strong class="text-[var(--color-fg)]">Hugging Face Hub</strong> — the
+            first time you use {site.name}, your browser downloads the Whisper
+            model file from Hugging Face's CDN. Subsequent visits use the browser
+            cache. Hugging Face sees your IP address as part of standard HTTP
+            request logging.
+          </li>
+          <li>
+            <strong class="text-[var(--color-fg)]">Google Fonts</strong> — we use
+            Geist + Geist Mono served from Google Fonts. Google receives standard
+            HTTP request data (IP, user agent, referrer).
+          </li>
+          <li>
+            <strong class="text-[var(--color-fg)]">Cloudflare</strong> — our
+            hosting/CDN provider may log standard request metadata (IP,
+            user-agent) for security and abuse-prevention.
+          </li>
+        </ul>
+      </section>
 
-      <h2 class="text-lg font-semibold text-[var(--color-fg)] mt-8">Your rights</h2>
-      <p>Because {site.name} doesn't have user accounts and doesn't collect personal data, there's no account to delete, no profile to download, no opt-outs to manage. If you're concerned about third-party requests, you can block them at your browser or network level — {site.name}'s core captioning still works offline after the model has been cached.</p>
+      <section>
+        <h2 class="text-lg font-semibold text-[var(--color-fg)]">4. Cookies and similar technologies</h2>
+        <p class="mt-3">
+          {site.name} does not set any first-party cookies. We use browser
+          <strong>localStorage</strong> (not cookies) to remember your
+          preferences — all of which stays on your device. Third-party services
+          we load may set cookies:
+        </p>
+        <ul class="mt-4 list-disc pl-5 space-y-2">
+          <li>
+            <strong class="text-[var(--color-fg)]">Google Analytics</strong> sets
+            cookies to measure aggregate page views. No personal data is
+            collected. See
+            <a class="underline" href="https://policies.google.com/privacy" target="_blank" rel="noopener">Google's Privacy Policy</a>.
+          </li>
+          <li>
+            <strong class="text-[var(--color-fg)]">Advertising (if shown).</strong>
+            We may display ads served by Google AdSense. Third-party vendors,
+            including Google, use cookies (such as the DART cookie) to serve ads
+            based on your prior visits to this and other websites. You can opt out
+            of personalized advertising via
+            <a class="underline" href="https://www.google.com/settings/ads" target="_blank" rel="noopener">Google Ads Settings</a>,
+            or opt out of some third-party vendors' cookies at
+            <a class="underline" href="https://www.aboutads.info/choices/" target="_blank" rel="noopener">aboutads.info/choices</a>.
+          </li>
+        </ul>
+      </section>
 
-      <h2 class="text-lg font-semibold text-[var(--color-fg)] mt-8">Contact</h2>
-      <p>Questions about this policy? Email <a class="underline" href={`mailto:${site.contactEmail}`}>{site.contactEmail}</a>. {site.name} is operated from {site.jurisdiction}.</p>
+      <section>
+        <h2 class="text-lg font-semibold text-[var(--color-fg)]">5. Your rights (GDPR &amp; CCPA)</h2>
+        <p class="mt-3">
+          Because {site.name} has no user accounts and your audio and transcripts
+          never leave your device, there is no account to delete and no profile to
+          download. For the limited analytics data processed by our providers, and
+          depending on your jurisdiction (e.g. the EU/UK under GDPR, or California
+          under the CCPA), you may have the right to access, correct, delete, or
+          restrict processing of your personal data, and to object to it. To
+          exercise any of these, email
+          <a class="underline" href={`mailto:${site.contactEmail}`}>{site.contactEmail}</a>.
+          You may also block third-party requests at your browser or network level
+          — core captioning still works offline once the model is cached.
+        </p>
+      </section>
+
+      <section>
+        <h2 class="text-lg font-semibold text-[var(--color-fg)]">6. Children's privacy</h2>
+        <p class="mt-3">
+          {site.name} is a general-audience utility and is not directed at
+          children under 13. We do not knowingly collect personal information from
+          children.
+        </p>
+      </section>
+
+      <section>
+        <h2 class="text-lg font-semibold text-[var(--color-fg)]">7. Changes to this policy</h2>
+        <p class="mt-3">
+          We may update this policy from time to time. Material changes will be
+          reflected by the “Last updated” date above. Continued use of {site.name}
+          after a change constitutes acceptance of the revised policy.
+        </p>
+      </section>
+
+      <section>
+        <h2 class="text-lg font-semibold text-[var(--color-fg)]">8. Contact</h2>
+        <p class="mt-3">
+          Questions about this policy or your data? Email
+          <a class="underline" href={`mailto:${site.contactEmail}`}>{site.contactEmail}</a>.
+          {site.name} is operated from {site.jurisdiction}. See also our
+          <a class="underline" href="/terms">Terms of Use</a>.
+        </p>
+      </section>
     </div>
   </main>
 </Layout>
