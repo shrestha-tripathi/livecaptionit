@@ -192,7 +192,7 @@ let _nextId = 1;
 // up immediately. Routine model-registry edits in whisperClient.ts
 // don't need a bump (those live in the page bundle, which has hashed
 // filenames and busts itself).
-const WORKER_VERSION = 7; // v0.6.1: text-only streaming decode (regression fix)
+const WORKER_VERSION = 8; // v0.6.2: rip out word-timestamp machinery (dead code)
 
 export function createWhisperClient(workerUrl = `/whisper-worker.js?v=${WORKER_VERSION}`): WhisperClient {
   const worker = new Worker(workerUrl, { type: "module" });

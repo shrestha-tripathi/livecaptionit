@@ -1423,18 +1423,15 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
 
       // Drop obvious hallucinations (repeated-word runs).
       if (text && !looksHallucinated(text)) {
-        // If chunks came back empty (older transformers.js, silent audio,
-        // or extractWordChunks defensive bailout), synthesize a minimal
-        // Word[] from text so the agreement loop stays operational. This
-        // is the v0.4.8 safety hatch — without it, an upstream regression
-        // in word-timestamps would silently stop captions entirely.
-        // v0.6.1 — streaming decodes text-only now (return_timestamps: false,
-        // the fast v0.1 path), so `chunks` is always empty here. Synthesize a
+        // v0.6.2 — streaming decodes text-only (return_timestamps: false), the
+        // fast v0.1 path, so the worker always sends `chunks: []`. Synthesize a
         // Word[] from the text with uniform per-word timing spread across a
         // notional 1000ms window (same approach as transcript.upgradeSegment).
-        // Per-word timing was never real on our quantized models anyway; this
-        // keeps .vtt/.srt word-granularity exports producing sensible cues.
-        // Committed batches also carry an accurate wall-clock tMs per segment.
+        // Per-word timing was never real on our quantized models; this keeps
+        // .vtt/.srt word-granularity exports producing sensible cues. Committed
+        // batches also carry an accurate wall-clock tMs per segment. The
+        // `chunks.length > 0` branch is retained defensively in case a stale
+        // cached worker (pre-v0.6.2) is still emitting chunks.
         const SYNTHETIC_SEGMENT_MS = 1000;
         const words = chunks.length > 0
           ? chunks
