@@ -1855,3 +1855,147 @@ Total: **92 → 117 vitest cases.**
 | 3 | `docs(spec): v0.4.2 retrospective` | (this commit) | ~varies |
 
 Total: 3 commits, each independently revertable.
+
+
+---
+
+# v0.6.0 — Language selector (auto-detect + pin)
+
+**Status:** SPEC — awaiting ship
+**Date:** 2026-07-14
+**Trigger:** User feedback (Di.) — "add a language selector switch such as Fr, Ru… or download a multilingual version of whisper."
+
+## Background / reality check
+
+Two facts reframe this feature:
+
+1. **The model is ALREADY multilingual.** We load `onnx-community/whisper-base`
+   (and tiny/small/large-v3-turbo) — the full multilingual ports, NOT the
+   `.en` English-only variants. Whisper base natively covers 99 languages and
+   can auto-detect. We were never limited to English by the model.
+
+2. **We were forcing English by config.** `public/whisper-worker.js`
+   `runAsrWithFallback()` hardcodes `language: "english"` on every call.
+   Removing/overriding that string is the entire unlock. No new download,
+   no new model, no new dependency.
+
+**Explicitly OUT of scope (learned the hard way):** `task: "translate"` mode.
+Shipped in v0.3.0, PULLED in v0.3.2 — Whisper's translate quality on real-world
+non-English audio/music was unshippable (Despacito → "of thug of thug" loops;
+Hindi lyrics → hallucinated brand names). We are NOT reviving translate. This
+spec is transcribe-only: caption speech in its OWN language.
+
+## Design decision (user-approved)
+
+**Default = Auto-detect. User can PIN a specific language.**
+
+- **Auto** (default): omit the `language` param → Whisper detects per-window.
+  Downside surfaced to user: on code-switching audio (Hinglish is the common
+  India case) the detected language can flip window-to-window, and first-window
+  detection adds minor latency.
+- **Pinned**: user selects a language → we pass `language: "<name>"` on every
+  call. Stable, no per-window detection cost, no mid-stream flipping. This
+  pinning IS the UX value-add over naive auto.
+
+## Language catalog
+
+Ship a curated shortlist (not all 99 — a 99-item dropdown is UX noise). Whisper
+accepts full lowercase English language names as the `language` param.
+
+| Code | Label (native)     | Whisper param |
+|------|--------------------|---------------|
+| auto | Auto-detect        | (omit)        |
+| en   | English            | english       |
+| hi   | हिन्दी (Hindi)      | hindi         |
+| es   | Español            | spanish       |
+| fr   | Français           | french        |
+| de   | Deutsch            | german        |
+| ru   | Русский            | russian       |
+| pt   | Português          | portuguese    |
+| it   | Italiano           | italian       |
+| ja   | 日本語 (Japanese)   | japanese      |
+| ko   | 한국어 (Korean)     | korean        |
+| zh   | 中文 (Chinese)      | chinese       |
+| ar   | العربية (Arabic)   | arabic        |
+| nl   | Nederlands         | dutch         |
+| tr   | Türkçe             | turkish       |
+| pl   | Polski             | polish        |
+| id   | Bahasa Indonesia   | indonesian    |
+
+Hindi placed high (India-market wedge). List is data-driven in a new
+`src/lib/language.ts` so growing it later is a one-line edit.
+
+## Architecture
+
+Mirror the EXISTING `vocabulary` pattern exactly (proven, low-risk):
+
+**New: `src/lib/language.ts`** (pure, fully testable)
+- `LANGUAGES: LanguageSpec[]` — `{ code, label, whisperParam }`
+- `AUTO_CODE = "auto"`, `DEFAULT_LANGUAGE_CODE = "auto"`
+- `LANGUAGE_PREF_KEY = "livecaptionit:language"`
+- `loadLanguage(): string` / `saveLanguage(code): string` (localStorage, guarded)
+- `languageByCode(code): LanguageSpec` (fallback to auto)
+- `whisperParamFor(code): string | undefined` (auto → undefined)
+
+**Worker (`public/whisper-worker.js`)** — bump `WORKER_VERSION` 5 → 6
+- New message: `{ type: "setLanguage", code: string }` → stores
+  `languageParam` (string | undefined). Empty/"auto" → undefined.
+- `runAsrWithFallback()` baseOpts: replace hardcoded `language: "english"`
+  with `language: languageParam` (undefined when auto → Whisper detects).
+- Reset `languageParam` to undefined on `dispose` (parallels vocab/word-flag).
+
+**Client (`src/lib/whisperClient.ts`)**
+- Add `setLanguage: (code: string) => void` to `WhisperClient` interface +
+  impl (`worker.postMessage({ type: "setLanguage", code })`). Safe pre-init,
+  same as setVocabulary.
+- Bump `WORKER_VERSION` const to 6.
+
+**UI (`CaptionApp.astro` + `.script.ts`)**
+- Add a `<select id="cp-language-select">` in the settings/download-bar area,
+  next to the model picker + vocabulary panel. Native `<select>` (zero-dep,
+  a11y-free, works in PiP-adjacent settings panel). Options from `LANGUAGES`.
+- On change: `saveLanguage(code)` + `whisper?.setLanguage(code)` + toast
+  (`Language: Auto-detect` / `Language pinned: Français`).
+- On startPipeline: push `whisper.setLanguage(loadLanguage())` right next to
+  the existing `whisper.setVocabulary(loadVocabulary())` (line ~1505).
+- **Mid-session change:** pinning a new language should flush the agreement
+  buffer + rolling window (same reset the removed task-toggle used) so we
+  don't blend two-language partial state. Wire to the existing reset path.
+
+## Non-negotiables preserved
+
+- Zero backend, zero new dependency, zero new download. Same model weights.
+- No new tracking. No accounts. Privacy moat intact.
+- Both themes pass (native `<select>` inherits theme tokens — verify contrast).
+- Brand-grep clean (all strings via components, none hardcoded brand).
+- One feature = one commit: `feat(whisper): language selector with auto-detect + pin`.
+
+## Test plan
+
+Unit (`src/lib/language.test.ts`, pure fns):
+- [ ] `whisperParamFor("auto")` → undefined; `whisperParamFor("fr")` → "french"
+- [ ] `languageByCode("garbage")` → auto spec (fallback)
+- [ ] `loadLanguage()` default = "auto" when unset
+- [ ] `saveLanguage("hi")` persists; `saveLanguage("auto")` clears key
+- [ ] localStorage-blocked (private mode) → no throw, returns default
+
+Manual:
+- [ ] Default state = Auto-detect selected
+- [ ] Speak English with Auto → English captions
+- [ ] Pin French, speak French → French captions (better than auto on 1st window)
+- [ ] Pin a language mid-session → agreement/rolling flush, no blended text
+- [ ] Refresh → pinned language persists
+- [ ] PiP window still works (setting lives in main tab, not PiP)
+- [ ] Both light + dark: select is legible, focus ring visible
+
+Build gate:
+- [ ] `npm run build` + `npx astro check` exit 0
+- [ ] All existing vitest pass + new language tests
+- [ ] Brand-grep clean
+
+## Planned commits
+
+| # | Commit |
+|---|---|
+| 1 | `feat(whisper): language selector with auto-detect + pin` |
+| 2 | `docs(spec): v0.6.0 retrospective` |

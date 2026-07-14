@@ -64,6 +64,10 @@ export interface WhisperClient {
    *  string to clear. Capped at 200 chars worker-side. Safe to call
    *  before init() or mid-session. */
   setVocabulary: (text: string) => void;
+  /** v0.6.0 — pin the caption language (Whisper `language` decode param) or
+   *  auto-detect. Pass the full lowercase Whisper name ("french") to pin, or
+   *  `undefined`/"" for auto-detect. Safe before init or mid-session. */
+  setLanguage: (param: string | undefined) => void;
   dispose: () => void;
   onStatus: (cb: (s: WhisperStatus) => void) => void;
 }
@@ -188,7 +192,7 @@ let _nextId = 1;
 // up immediately. Routine model-registry edits in whisperClient.ts
 // don't need a bump (those live in the page bundle, which has hashed
 // filenames and busts itself).
-const WORKER_VERSION = 5; // v0.5.5: word-timestamps fallback for quantized models
+const WORKER_VERSION = 6; // v0.6.0: setLanguage message (auto-detect + pin)
 
 export function createWhisperClient(workerUrl = `/whisper-worker.js?v=${WORKER_VERSION}`): WhisperClient {
   const worker = new Worker(workerUrl, { type: "module" });
@@ -285,6 +289,9 @@ export function createWhisperClient(workerUrl = `/whisper-worker.js?v=${WORKER_V
     },
     setVocabulary(text: string) {
       worker.postMessage({ type: "setVocabulary", text });
+    },
+    setLanguage(param: string | undefined) {
+      worker.postMessage({ type: "setLanguage", param });
     },
     dispose() {
       worker.postMessage({ type: "dispose" });

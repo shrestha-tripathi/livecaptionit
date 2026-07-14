@@ -57,6 +57,13 @@ import {
   VOCABULARY_MAX_CHARS,
 } from "../lib/vocabulary";
 import {
+  LANGUAGES,
+  loadLanguage,
+  saveLanguage,
+  languageByCode,
+  whisperParamFor,
+} from "../lib/language";
+import {
   decodeShareUrl,
   encodeShareUrl,
   readSharePayloadFromLocation,
@@ -809,6 +816,58 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     toast.success("Vocabulary cleared");
   });
 
+  // ── Caption language (v0.6.0): auto-detect default, user can pin ──
+  //   The onnx-community/whisper-* models are multilingual; we simply pass a
+  //   `language` decode param (or omit it for auto). Applies immediately —
+  //   pinning mid-session flushes the rolling buffer + agreement so we don't
+  //   blend two-language partial state into one line.
+  const languageSelect = rootEl.querySelector<HTMLSelectElement>("#cp-language-select");
+  const languageCurrent = rootEl.querySelector<HTMLSpanElement>("#cp-language-current");
+
+  function renderLanguageSummary(code: string): void {
+    if (languageCurrent) {
+      const spec = languageByCode(code);
+      languageCurrent.textContent = code === "auto" ? "" : `(${spec.label})`;
+    }
+  }
+
+  if (languageSelect) {
+    // Populate options from the catalog.
+    languageSelect.innerHTML = "";
+    for (const l of LANGUAGES) {
+      const opt = document.createElement("option");
+      opt.value = l.code;
+      opt.textContent = l.label;
+      languageSelect.appendChild(opt);
+    }
+    const savedLang = loadLanguage();
+    languageSelect.value = savedLang;
+    renderLanguageSummary(savedLang);
+
+    languageSelect.addEventListener("change", () => {
+      const code = saveLanguage(languageSelect.value);
+      // Coercion may have reset an unknown value to auto — reflect it.
+      if (languageSelect.value !== code) languageSelect.value = code;
+      renderLanguageSummary(code);
+      const param = whisperParamFor(code);
+      whisper?.setLanguage(param);
+      // Mid-session: flush so the next window decodes cleanly in the new
+      // language instead of blending the tail of the previous language.
+      if (whisperReady && rolling.length() > 0) {
+        flushLiveTailToCommitted();
+        rolling.reset();
+        agreement.reset();
+        stabilityTracker.reset();
+        renderLiveLine("");
+      }
+      toast.success(
+        code === "auto"
+          ? "Language: Auto-detect"
+          : `Language pinned: ${languageByCode(code).label}`,
+      );
+    });
+  }
+
   // ── Caption style prefs: drive CSS custom properties on the caption box
   //    so changes apply LIVE to both inline and PiP rendering. Position
   //    swaps a utility class for flex alignment. ──
@@ -1503,6 +1562,9 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     // transcribe call already has it. setVocabulary is safe pre-init (worker
     // just stores the string until transcribe needs it).
     whisper.setVocabulary(loadVocabulary());
+    // v0.6.0 — push current language (auto by default) BEFORE init resolves so
+    // the first transcribe call already decodes in the right language.
+    whisper.setLanguage(whisperParamFor(loadLanguage()));
     whisper.onStatus((s) => {
       switch (s.type) {
         case "loading":
@@ -1665,6 +1727,8 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     whisper = createWhisperClient();
     // v0.4.3 — push current vocabulary BEFORE init (same as live path).
     whisper.setVocabulary(loadVocabulary());
+    // v0.6.0 — push language too (same as live path).
+    whisper.setLanguage(whisperParamFor(loadLanguage()));
     whisper.onStatus((s) => {
       switch (s.type) {
         case "loading":

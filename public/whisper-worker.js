@@ -59,6 +59,17 @@ let wordTimestampsBroken = false;
 // are too long crowd out the actual audio's transcription budget).
 let vocabularyPrompt = "";
 
+// v0.6.0 — caption language.
+// The onnx-community/whisper-* models are the MULTILINGUAL ports (not `.en`),
+// so they natively cover 99 languages + auto-detect. `languageParam` is the
+// string passed to Whisper's `language` decode option:
+//   - undefined  → auto-detect (Whisper picks per window; default)
+//   - "french" / "hindi" / …  → pin decode to that language (stable, lower
+//     first-window latency, no mid-stream language flipping on Hinglish etc.)
+// Set by `setLanguage` from the parent. TRANSCRIBE-only — we do NOT expose
+// `task: "translate"` (shipped v0.3.0, pulled v0.3.2 for bad quality).
+let languageParam = undefined;
+
 // Default model — onnx-community port has all dtype variants.
 const DEFAULT_MODEL = "onnx-community/whisper-base";
 
@@ -266,7 +277,7 @@ async function runAsrWithFallback(audio) {
   const baseOpts = {
     chunk_length_s: 30,
     stride_length_s: 5,
-    language: "english",
+    language: languageParam,
     task: "transcribe",
     num_beams: 1,
     temperature: 0,
@@ -382,6 +393,14 @@ self.onmessage = async (e) => {
       vocabularyPrompt = (data.text && typeof data.text === "string"
         ? data.text.slice(0, 200).trim()
         : "");
+      break;
+    case "setLanguage":
+      // v0.6.0 — pin decode language, or auto-detect. `param` is the Whisper
+      // full-name string ("french") or undefined/"" for auto. Coerced to a
+      // non-empty string else undefined so `language: languageParam` cleanly
+      // means "detect" when unset. Safe pre-init (worker just stores it).
+      languageParam =
+        data.param && typeof data.param === "string" ? data.param : undefined;
       break;
     default:
       // ignore unknown
