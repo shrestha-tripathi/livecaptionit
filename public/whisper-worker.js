@@ -273,6 +273,25 @@ async function transcribe(audio, id) {
 // this model export can't do word timestamps, no point asking again
 // every tick (which would emit a worker error every ~3s, garbage the
 // console, and waste a forward pass before each retry).
+// v0.6.1 — restore the fast v0.1 streaming decode.
+//
+// REGRESSION FIXED: v0.4.8 switched the streaming hot path to request
+// `return_timestamps: "word"`. But EVERY model we ship has a quantized
+// decoder (base=q4, large-turbo=q4f16), and quantized ONNX exports drop the
+// cross-attention outputs transformers.js needs for word timestamps. Result:
+//   1. First tick ALWAYS threw + retried the same audio (2× decode) — a fresh
+//      worker per Start meant every session's first caption was 2× slow.
+//   2. Every later tick ran `return_timestamps: true` (segment mode), ~15-30%
+//      slower than text-only, which inflated durationMs → the adaptive tick
+//      backoff spaced ticks further apart → captions lagged behind audio.
+//   3. The "word" timings produced were FAKE anyway (linear-interpolated from
+//      segments), so we paid a perf tax for made-up data.
+//
+// The streaming path now decodes text-only (`return_timestamps: false`) — the
+// exact fast mode v0.1–v0.4.7 used. Per-word timing for exports is synthesized
+// downstream (it was never real on our quantized models). The
+// wordTimestampsBroken machinery is retained but effectively unused now; kept
+// so a future non-quantized model could re-enable real word timing.
 async function runAsrWithFallback(audio) {
   const baseOpts = {
     chunk_length_s: 30,
@@ -284,29 +303,9 @@ async function runAsrWithFallback(audio) {
     no_repeat_ngram_size: 3,
     initial_prompt: vocabularyPrompt || undefined,
   };
-  if (wordTimestampsBroken) {
-    // Already known-bad — go straight to segment mode, no retry needed.
-    return await asr(audio, { ...baseOpts, return_timestamps: true });
-  }
-  try {
-    return await asr(audio, { ...baseOpts, return_timestamps: "word" });
-  } catch (e) {
-    const msg = (e && e.message) || String(e);
-    if (/cross attentions/i.test(msg)) {
-      // q4/q8 quantized model — switch to segment timestamps for this
-      // session. Emit a one-time loading message so the parent / debug
-      // panel sees the transition; don't keep firing it every tick.
-      wordTimestampsBroken = true;
-      self.postMessage({
-        type: "loading",
-        message:
-          "Quantized model has no cross-attention; falling back to " +
-          "segment-level timestamps (per-word timing will be approximated).",
-      });
-      return await asr(audio, { ...baseOpts, return_timestamps: true });
-    }
-    throw e;
-  }
+  // Fast path: text-only decode. No timestamp tokens, no double-decode, no
+  // cross-attention requirement. This is the v0.1 smooth-era configuration.
+  return await asr(audio, { ...baseOpts, return_timestamps: false });
 }
 
 // Convert transformers.js word-timestamped output into our Word[] shape.
