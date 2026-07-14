@@ -1861,7 +1861,7 @@ Total: 3 commits, each independently revertable.
 
 # v0.6.0 — Language selector (auto-detect + pin)
 
-**Status:** SPEC — awaiting ship
+**Status:** SHIPPED (2026-07-14, commit 13f06ea)
 **Date:** 2026-07-14
 **Trigger:** User feedback (Di.) — "add a language selector switch such as Fr, Ru… or download a multilingual version of whisper."
 
