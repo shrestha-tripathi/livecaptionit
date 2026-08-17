@@ -281,7 +281,11 @@ function saveCaptionStyle(s: CaptionStyle) {
 function loadModelPref(isMobile = false): ModelSpec["id"] {
   try {
     const raw = localStorage.getItem(MODEL_PREF_KEY);
-    if (raw === "tiny" || raw === "base" || raw === "small" || raw === "large-turbo") return raw;
+    // v0.7.0 — validate against the live catalog (was a hardcoded 4-id list,
+    // which silently dropped stored Moonshine prefs and reset them to default).
+    if (raw && AVAILABLE_MODELS.some((m) => m.id === raw)) {
+      return raw as ModelSpec["id"];
+    }
   } catch {}
   // v0.5.1 — mobile gets `tiny` (39 MB) by default to fit inside the
   // mobile JS heap budget. Desktop keeps the v0.4.0 default (`base`,
@@ -293,6 +297,21 @@ function saveModelPref(id: ModelSpec["id"]) {
   try {
     localStorage.setItem(MODEL_PREF_KEY, id);
   } catch {}
+}
+
+/**
+ * v0.7.0 — the Whisper `language` decode param to send to the worker at init,
+ * honouring the model↔language interlock. English-only models (Moonshine) get
+ * "english" regardless of the stored multilingual pin (Moonshine ignores it,
+ * but this keeps intent explicit + correct if a future English-only Whisper
+ * `.en` port is added). Multilingual (Whisper) models use the stored pref.
+ * The stored language pref is never mutated here — it's restored when the user
+ * switches back to a multilingual model.
+ */
+function effectiveLanguageParam(isMobile = false): string | undefined {
+  const activeModel = modelById(loadModelPref(isMobile));
+  if (activeModel.englishOnly) return "english";
+  return whisperParamFor(loadLanguage());
 }
 
 interface PipPrefs {
@@ -720,6 +739,11 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2 text-sm font-semibold text-[var(--color-fg)]">
             <span>${m.label}</span>
+            ${
+              m.englishOnly
+                ? `<span class="font-normal text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-[var(--color-surface-strong)] text-[var(--color-fg-muted)]" title="This model only transcribes English">English only</span>`
+                : ""
+            }
             <span class="font-normal text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded ${
               isCached
                 ? "bg-[var(--color-brand-soft)] text-[var(--color-brand-strong)]"
@@ -751,6 +775,10 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
         selectedModelId = m.id;
         saveModelPref(m.id);
         renderModelList(); // refresh selected highlight
+        // v0.7.0 — model family may have changed (Whisper ↔ Moonshine). Re-run
+        // the language interlock: English-only models force English + disable
+        // non-English options; switching back to Whisper restores the pin.
+        syncLanguageInterlock();
       });
       modelList.appendChild(item);
     }
@@ -816,18 +844,57 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     toast.success("Vocabulary cleared");
   });
 
-  // ── Caption language (v0.6.0): auto-detect default, user can pin ──
-  //   The onnx-community/whisper-* models are multilingual; we simply pass a
-  //   `language` decode param (or omit it for auto). Applies immediately —
-  //   pinning mid-session flushes the rolling buffer + agreement so we don't
-  //   blend two-language partial state into one line.
+  // ── Caption language (v0.6.0) + Moonshine interlock (v0.7.0) ──
+  //   Whisper models are multilingual; Moonshine models are English-only.
+  //   We keep the user's REAL language preference in `savedLangPref` and only
+  //   *reflect* (never overwrite) it while an English-only model is active, so
+  //   switching to Moonshine and back restores their Hindi/French/etc. pin.
   const languageSelect = rootEl.querySelector<HTMLSelectElement>("#cp-language-select");
   const languageCurrent = rootEl.querySelector<HTMLSpanElement>("#cp-language-current");
+  const languageNote = rootEl.querySelector<HTMLSpanElement>("#cp-language-note");
+
+  // The user's real, persisted language choice. English-only models don't
+  // clobber this — they just force the worker + select to English temporarily.
+  let savedLangPref = loadLanguage();
+
+  function activeModelIsEnglishOnly(): boolean {
+    return modelById(selectedModelId).englishOnly === true;
+  }
 
   function renderLanguageSummary(code: string): void {
     if (languageCurrent) {
       const spec = languageByCode(code);
       languageCurrent.textContent = code === "auto" ? "" : `(${spec.label})`;
+    }
+  }
+
+  // v0.7.0 — sync the language <select> + worker to the active model's family.
+  //   English-only model → force "English", disable every non-English option,
+  //     show a note, tell the worker "english" (Moonshine ignores it anyway).
+  //   Multilingual model → restore savedLangPref, re-enable all options.
+  // Never persists the coercion — savedLangPref is the source of truth.
+  function syncLanguageInterlock(): void {
+    if (!languageSelect) return;
+    const englishOnly = activeModelIsEnglishOnly();
+    // Enable/disable non-English options for discoverability (not just enforcement).
+    for (const opt of Array.from(languageSelect.options)) {
+      opt.disabled = englishOnly && opt.value !== "en";
+    }
+    if (englishOnly) {
+      languageSelect.value = "en";
+      renderLanguageSummary("en");
+      whisper?.setLanguage("english");
+      if (languageNote) {
+        languageNote.textContent =
+          savedLangPref !== "en" && savedLangPref !== "auto"
+            ? `English only — your ${languageByCode(savedLangPref).label} pin is kept for Whisper.`
+            : "This model transcribes English only.";
+      }
+    } else {
+      languageSelect.value = savedLangPref;
+      renderLanguageSummary(savedLangPref);
+      whisper?.setLanguage(whisperParamFor(savedLangPref));
+      if (languageNote) languageNote.textContent = "";
     }
   }
 
@@ -840,14 +907,25 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
       opt.textContent = l.label;
       languageSelect.appendChild(opt);
     }
-    const savedLang = loadLanguage();
-    languageSelect.value = savedLang;
-    renderLanguageSummary(savedLang);
+    // Reflect current state (honours an English-only model saved from a
+    // previous session — the interlock applies on first paint too).
+    syncLanguageInterlock();
 
     languageSelect.addEventListener("change", () => {
+      // Guard: an English-only model is active — non-English pins aren't
+      // possible. Revert to English and explain. (Options are also disabled,
+      // but keyboard selection can still fire change on some browsers.)
+      if (activeModelIsEnglishOnly() && languageSelect.value !== "en") {
+        languageSelect.value = "en";
+        toast.info(
+          `${modelById(selectedModelId).label} is English-only. Pick a Whisper model to caption other languages.`,
+        );
+        return;
+      }
       const code = saveLanguage(languageSelect.value);
       // Coercion may have reset an unknown value to auto — reflect it.
       if (languageSelect.value !== code) languageSelect.value = code;
+      savedLangPref = code; // this IS a real user choice — remember it
       renderLanguageSummary(code);
       const param = whisperParamFor(code);
       whisper?.setLanguage(param);
@@ -1574,7 +1652,8 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     whisper.setVocabulary(loadVocabulary());
     // v0.6.0 — push current language (auto by default) BEFORE init resolves so
     // the first transcribe call already decodes in the right language.
-    whisper.setLanguage(whisperParamFor(loadLanguage()));
+    // v0.7.0 — effectiveLanguageParam honours the English-only interlock.
+    whisper.setLanguage(effectiveLanguageParam(isMobile));
     whisper.onStatus((s) => {
       switch (s.type) {
         case "loading":
@@ -1738,7 +1817,8 @@ function prefsToPixels(p: PipPrefs): { width: number; height: number } {
     // v0.4.3 — push current vocabulary BEFORE init (same as live path).
     whisper.setVocabulary(loadVocabulary());
     // v0.6.0 — push language too (same as live path).
-    whisper.setLanguage(whisperParamFor(loadLanguage()));
+    // v0.7.0 — effectiveLanguageParam honours the English-only interlock.
+    whisper.setLanguage(effectiveLanguageParam(isMobile));
     whisper.onStatus((s) => {
       switch (s.type) {
         case "loading":
