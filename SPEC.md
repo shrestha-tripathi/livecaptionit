@@ -2160,6 +2160,25 @@ model-attribution list to include Moonshine AI. (Small copy commit, separate.)
 | 4 | `docs(about): mention optional Moonshine engine + attribution` |
 | 5 | `docs(spec): v0.7.0 retrospective` |
 
+## Retrospective — SHIPPED 2026-08-17
+
+All 5 commits landed as planned. Notable implementation findings:
+
+- **`loadModelPref` latent bug fixed in Phase 3:** it validated the stored
+  model pref against a hardcoded `"tiny"|"base"|"small"|"large-turbo"` list, so
+  a saved `moonshine-*` pref would have been silently dropped + reset to default
+  on every load. Now validates against `AVAILABLE_MODELS` (the live catalog).
+- **Language-pref preservation** implemented via an in-memory `savedLangPref` +
+  `syncLanguageInterlock()` — the persisted language key is never overwritten by
+  the English-only coercion, so Whisper↔Moonshine↔Whisper round-trips restore
+  the user's Hindi/French/etc. pin. `effectiveLanguageParam()` centralises the
+  interlock for both worker-init call sites.
+- **Worker stayed wire-compatible:** `setLanguage`/`setVocabulary` messages
+  still flow for Moonshine but are no-ops in `runAsr` (Moonshine branch passes
+  only `return_timestamps:false`). `WORKER_VERSION` bumped 8→9.
+- **Zero regressions:** all 369 unit tests pass; every Whisper tier + default +
+  multilingual pinning unchanged. Additive as designed.
+
 ## Out of scope (deferred)
 
 - Multilingual Moonshine community ports (`moonshine-tiny-zh/ja/vi-ONNX`, etc.) —
