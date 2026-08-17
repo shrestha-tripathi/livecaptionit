@@ -1999,3 +1999,173 @@ Build gate:
 |---|---|
 | 1 | `feat(whisper): language selector with auto-detect + pin` |
 | 2 | `docs(spec): v0.6.0 retrospective` |
+
+---
+
+# v0.7.0 — Moonshine model family (multi-engine ASR)
+
+**Status:** SPEC (user-approved direction 2026-08-17) — spec-first, then implement.
+**Motivation:** Whisper is architecturally locked to a padded 30-second window —
+it processes a full 30s buffer even for a 2s utterance. That's the dominant
+latency floor for a live-caption app that feeds short rolling chunks. **Moonshine**
+(Useful Sensors / Moonshine AI, MIT) uses *variable-length* input — compute scales
+with actual audio length — making it materially faster + lower-latency on exactly
+the short-segment streaming workload we run. Ports exist under `onnx-community/*`
+(the org we already trust; the `Xenova/*` silent-hang pitfall does NOT apply) with
+full dtype variants (`encoder_model` fp32/q4 + `decoder_model_merged` q4), and
+official transformers.js support + live browser reference Spaces
+(`webml-community/moonshine-web`, `fastrtc/moonshine-live`).
+
+## Guiding principle (user directive)
+
+> Add ALL the new Moonshine models. **Keep every existing Whisper model working —
+> remove nothing.** Give the USER control to pick what they like. Clearly label
+> English-only models as English-only.
+
+This is **additive**. The four Whisper tiers stay exactly as-is (same hfIds, same
+dtypes, same decode path, same defaults). Moonshine is layered alongside as a
+second engine family the user can opt into.
+
+## The core design tension: Moonshine is English-only + a different engine
+
+Two hard differences from Whisper that the architecture must absorb cleanly:
+
+1. **English-only.** Official `moonshine-tiny` / `moonshine-base` are English-only
+   (27M / 61M params). We just shipped (v0.6.0) a multilingual language selector
+   (Auto + Hindi/French/… 16 languages). Moonshine **cannot** honour a non-English
+   pin. So model choice and language choice now *interlock*.
+2. **Different decode contract.** Moonshine is a Moonshine-architecture seq2seq
+   model, NOT Whisper. It does **not** accept Whisper's `language`, `task`,
+   `chunk_length_s`/`stride_length_s`, or `initial_prompt` decode params. It's a
+   short-form transcriber — you feed it a window and it returns text. The worker's
+   `runAsr()` and dtype selection are currently Whisper-shaped and must become
+   **model-family-aware**.
+
+## Model catalog (final — additive)
+
+`ModelSpec` gains two fields: `family: "whisper" | "moonshine"` and
+`englishOnly: boolean`. Existing four entries get `family: "whisper",
+englishOnly: false` (they're the multilingual ports). New entries:
+
+| id | label | hfId | size | family | English-only | verdict |
+|---|---|---|---|---|---|---|
+| `moonshine-tiny` | Moonshine Tiny | `onnx-community/moonshine-tiny-ONNX` | ~40 MB | moonshine | ✅ | Fastest overall. Ultra-low latency, tiny memory — best mobile-English + lowest-power option |
+| `moonshine-base` | Moonshine Base | `onnx-community/moonshine-base-ONNX` | ~85 MB | moonshine | ✅ | Fast + higher accuracy than Moonshine Tiny; competitive with Whisper base on clean English at lower latency |
+
+Whisper tiers (UNCHANGED — for reference):
+
+| id | label | hfId | size | family | English-only |
+|---|---|---|---|---|---|
+| `tiny` | Tiny | `onnx-community/whisper-tiny` | 39 MB | whisper | ❌ (multilingual) |
+| `base` | Base | `onnx-community/whisper-base` | 74 MB | whisper | ❌ |
+| `small` | Small | `onnx-community/whisper-small` | 244 MB | whisper | ❌ |
+| `large-turbo` | Large turbo | `onnx-community/whisper-large-v3-turbo` | 537 MB | whisper | ❌ |
+
+**Defaults do NOT change.** Desktop default stays `base`, mobile default stays
+`tiny` (both Whisper). Moonshine is strictly opt-in — no silent behaviour change
+for existing users, and multilingual stays the out-of-box experience.
+
+## Language ↔ model interlock (the key UX rule)
+
+The whole point is user control WITHOUT footguns. Rules:
+
+- **Model picker** shows an `English only` chip on every `englishOnly` model
+  (both Moonshine tiers). Multilingual models show no chip (English is implied
+  as one of many).
+- **If the user selects an English-only model while a non-English / non-Auto
+  language is pinned:** show a one-time inline notice + auto-reset the language
+  selector to **English** (not Auto — Auto on an English-only model is
+  meaningless; pin English explicitly). Toast: `"Moonshine is English-only —
+  language set to English."`
+- **If the user pins a non-English language while an English-only model is
+  selected:** the language `change` handler detects the active model is
+  English-only and either (a) blocks with a toast explaining Moonshine is
+  English-only, or (b) offers to switch back to a multilingual Whisper tier.
+  Chosen behaviour: **(a) block + toast + revert the select to English** — least
+  surprising, keeps the user's fast model. If they truly want Hindi, they pick a
+  Whisper tier first, then the language list re-enables.
+- The language `<select>` visually **disables non-English options** (or shows
+  them greyed with an `(needs Whisper)` suffix) whenever an English-only model is
+  active, so the interlock is discoverable, not just enforced on click.
+
+`languageParam` sent to the worker for an English-only model is always
+`"english"` (or simply omitted — Moonshine ignores it either way; we still store
+the user's real preference so switching back to Whisper restores it).
+
+**Preference preservation:** selecting Moonshine must NOT destroy the user's saved
+multilingual language pick. Store the language pref as-is; only *coerce what's
+sent to the worker*. When the user switches back to a Whisper model, their old
+language pin (e.g. Hindi) is restored automatically.
+
+## Worker changes (`public/whisper-worker.js`)
+
+Make the worker model-family-aware. Detect family from the model id string
+(`/moonshine/i.test(model)` → moonshine, else whisper). Then:
+
+- **dtype:** Moonshine uses `{ encoder_model: "fp32", decoder_model_merged: "q4" }`
+  on WebGPU (same shape as whisper tiny/base — proven), `{ encoder_model: "q4",
+  decoder_model_merged: "q4" }` on WASM/mobile (memory-safe peak, matches the
+  v0.5.3 iOS jetsam fix rationale). Whisper dtype logic stays byte-identical.
+- **runAsr:** branch on family.
+  - Whisper → unchanged (`chunk_length_s: 30, stride_length_s: 5, language,
+    task, initial_prompt, no_repeat_ngram_size, return_timestamps: false`).
+  - Moonshine → minimal call: `asr(audio, { return_timestamps: false })`. NO
+    Whisper-only params (they either error or are silently ignored — we pass
+    none to be safe). Keep `num_beams: 1, temperature: 0` if accepted; verify
+    against the transformers.js Moonshine pipeline during Phase 2.
+- `setLanguage` / `setVocabulary` messages still arrive but are **no-ops for
+  Moonshine** decode (stored, unused). No protocol change — wire-compatible.
+- Bump `WORKER_VERSION` (page cache-bust) since the worker file changes.
+
+## Non-negotiables preserved
+
+- ✅ Every existing Whisper model works identically (hfId, dtype, decode, cache).
+- ✅ Defaults unchanged (desktop `base`, mobile `tiny`).
+- ✅ Multilingual remains the out-of-box path.
+- ✅ `onnx-community/*` only — no `Xenova/*` (silent-hang pitfall).
+- ✅ WebGPU-first with WASM fallback; mobile forceWasm path intact.
+- ✅ No server, no accounts, no new tracking. Model still downloads once from HF,
+  cached in browser. Privacy copy unchanged (still "runs Whisper/Moonshine locally").
+- ✅ One feature = one commit.
+
+## About-page / copy accuracy
+
+`about.astro`, `index.astro` FAQ, `disclaimer.astro` currently say "Whisper".
+Add a light, accurate mention that the tool also supports **Moonshine** (MIT,
+Moonshine AI) as an optional faster English-only engine. Keep the disclaimer's
+"not affiliated with… any speech-recognition vendor" line and extend the
+model-attribution list to include Moonshine AI. (Small copy commit, separate.)
+
+## Test plan
+
+- Desktop WebGPU: switch to Moonshine Tiny + Base → both load, caption live,
+  visibly lower first-word latency than Whisper base on clean English.
+- Mobile / forced-WASM: Moonshine Tiny loads under the iOS memory budget (should
+  be *safer* than whisper-tiny given 27M params).
+- Interlock: pin Hindi on Whisper → switch to Moonshine → language auto-resets to
+  English + toast; non-English options disabled in the select. Switch back to
+  Whisper base → Hindi pin restored, options re-enabled.
+- Regression: every Whisper tier still loads + captions exactly as before;
+  language pinning (Hindi/French) still works on Whisper; vocabulary biasing still
+  works on Whisper; defaults unchanged on fresh localStorage.
+- `npm run build && npx astro check` both exit 0.
+
+## Planned commits (one feature each)
+
+| # | Commit |
+|---|---|
+| 1 | `feat(whisper): Moonshine model family in catalog (additive, English-only flagged)` |
+| 2 | `feat(worker): model-family-aware dtype + decode for Moonshine engine` |
+| 3 | `feat(ui): English-only badges + language↔model interlock in picker` |
+| 4 | `docs(about): mention optional Moonshine engine + attribution` |
+| 5 | `docs(spec): v0.7.0 retrospective` |
+
+## Out of scope (deferred)
+
+- Multilingual Moonshine community ports (`moonshine-tiny-zh/ja/vi-ONNX`, etc.) —
+  no official Hindi/French yet; mixing per-language repos is messy. Revisit if
+  official multilingual Moonshine ships.
+- Making Moonshine a default. Stays opt-in until we have field latency/quality
+  data from real users.
+- Word-timestamp exports from Moonshine (same quantized-decoder limitation as
+  Whisper — parent-synthesized timing continues to apply).
