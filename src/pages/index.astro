@@ -20,7 +20,7 @@ const faqJsonLd = {
       name: "Does my audio get uploaded anywhere?",
       acceptedAnswer: {
         "@type": "Answer",
-        text: `<p>No. ${site.name} runs the Whisper speech-recognition model directly in your browser via WebGPU and transformers.js. Audio is processed on your device and never sent to any server. The only network requests are the one-time download of the model file from Hugging Face Hub, cached locally afterward.</p>`,
+        text: `<p>No. ${site.name} runs the speech-recognition model — Whisper (multilingual) or Moonshine (a faster, English-only option) — directly in your browser via WebGPU and transformers.js. Audio is processed on your device and never sent to any server. The only network requests are the one-time download of the model file from Hugging Face Hub, cached locally afterward.</p>`,
       },
     },
     {
