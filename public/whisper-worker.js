@@ -5,13 +5,20 @@
 // runtime ourselves. The actual Whisper model is downloaded lazily from
 // Hugging Face Hub and cached in browser IndexedDB.
 //
-// IMPORTANT: model choice
-//   We use onnx-community/whisper-base — NOT Xenova/whisper-base.
-//   The onnx-community port ships every dtype variant (fp32, fp16, q4, q8)
-//   so per-component WebGPU dtypes "just work". The Xenova port only has
-//   fp32 + quantized, so dtype: "fp16" silently hangs (404 on a file the
-//   library waits for forever). This matches Xenova's realtime-whisper-webgpu
-//   reference demo configuration.
+// IMPORTANT: model choice + engine family (v0.7.0)
+//   Two engine families ship, both from onnx-community/* (NOT Xenova/* — that
+//   port silently hangs on missing dtype files):
+//     - Whisper (whisper-tiny/base/small/large-v3-turbo): multilingual, accepts
+//       the full Whisper decode param set (language, task, chunk_length_s,
+//       initial_prompt). 30s padded window.
+//     - Moonshine (moonshine-tiny-ONNX/moonshine-base-ONNX): English-ONLY,
+//       variable-length short-form transcriber. Does NOT accept Whisper's
+//       language/task/chunk/prompt params — feed a window, get text. Lower
+//       latency on short rolling chunks. See SPEC.md v0.7.0.
+//   The onnx-community ports ship every dtype variant (fp32, fp16, q4, q8) so
+//   per-component WebGPU dtypes "just work" for BOTH families. This matches
+//   Xenova's realtime-whisper-webgpu + webml-community/moonshine-web demos.
+//   `familyOf(model)` below branches dtype + decode-call shape on the family.
 //
 // Message protocol:
 //   incoming: { type: "init", model?: string }
@@ -62,6 +69,14 @@ let languageParam = undefined;
 
 // Default model — onnx-community port has all dtype variants.
 const DEFAULT_MODEL = "onnx-community/whisper-base";
+
+// v0.7.0 — engine family detection from the model id string. Moonshine models
+// are English-only and use a different decode contract than Whisper (see the
+// header comment + runAsr). Anything not matching /moonshine/ is treated as
+// Whisper (the default + safest assumption for the four whisper-* tiers).
+function familyOf(model) {
+  return /moonshine/i.test(model || "") ? "moonshine" : "whisper";
+}
 
 // Wrap an async operation in a timeout so silent hangs surface as errors.
 function withTimeout(promise, ms, label) {
@@ -118,9 +133,11 @@ async function init(model = DEFAULT_MODEL, opts = {}) {
   currentModel = model;
   const progress_callback = buildProgressCallback();
 
-  // v0.4.3 — model-aware dtype selection.
-  // tiny/base/small: encoder fp32 + decoder q4 (proven config from the
-  //   reference realtime-whisper-webgpu demo — fast, high quality)
+  // v0.4.3 / v0.7.0 — model-aware dtype selection.
+  // tiny/base/small + BOTH Moonshine tiers: encoder fp32 + decoder q4 (proven
+  //   config from the realtime-whisper-webgpu + moonshine-web demos — fast,
+  //   high quality). Moonshine is small (27M/61M params) so it slots into the
+  //   same non-large branch as whisper tiny/base with no special-casing.
   // large-v3-turbo:  encoder q4f16 + decoder q4f16 (~537 MB total).
   //   fp32 encoder for large-v3-turbo would be 2.5 GB, which is too
   //   much for browser memory + first-load patience. q4f16 keeps the
@@ -253,19 +270,31 @@ async function transcribe(audio, id) {
   }
 }
 
-// Streaming ASR decode — text-only, fast path (v0.6.2).
+// Streaming ASR decode — text-only, fast path (v0.6.2 / v0.7.0).
 //
-// Decodes with `return_timestamps: false` — byte-identical to the smooth
-// v0.1–v0.4.7 config. History: v0.4.8 switched this to request
-// `return_timestamps: "word"`, but EVERY model we ship has a quantized decoder
-// (base=q4, large-turbo=q4f16) whose ONNX export drops the cross-attention
-// outputs word timestamps need. That caused a 2× first-tick decode + slower
-// per-tick decode + fake (interpolated) timings — the v0.6.1 perf regression.
-// The word-timestamp machinery was ripped out in v0.6.2 (it produced fake
-// data on every shipped model). Per-word timing for .vtt/.srt exports is
-// synthesized parent-side. Do NOT re-add timestamp requests here unless a
-// NON-quantized decoder ships.
+// v0.7.0 — model-family-aware. Whisper and Moonshine take DIFFERENT decode
+// options:
+//   - Whisper: the full param set below (chunk_length_s/stride for the 30s
+//     padded window, language pin, task, initial_prompt vocab biasing). Byte-
+//     identical to the smooth v0.1–v0.4.7 config. Do NOT re-add
+//     return_timestamps:"word" — every shipped Whisper decoder is quantized
+//     (base=q4, large-turbo=q4f16) and its ONNX export drops the cross-attention
+//     outputs word timestamps need (that was the v0.6.1 perf regression, ripped
+//     out in v0.6.2). Per-word timing for .vtt/.srt is synthesized parent-side.
+//   - Moonshine: a MINIMAL call. Moonshine is a short-form, variable-length
+//     transcriber that does NOT accept Whisper's language/task/chunk_length_s/
+//     stride_length_s/initial_prompt params. Passing them either errors or is
+//     silently ignored, so we pass NONE of them. languageParam + vocabularyPrompt
+//     are stored (setLanguage/setVocabulary still arrive) but are no-ops for
+//     Moonshine decode — it's English-only and has no prompt-biasing hook.
 async function runAsr(audio) {
+  if (familyOf(currentModel) === "moonshine") {
+    // English-only short-form transcriber — feed the window, get text.
+    return await asr(audio, {
+      return_timestamps: false,
+    });
+  }
+  // Whisper — unchanged multilingual decode.
   return await asr(audio, {
     chunk_length_s: 30,
     stride_length_s: 5,
