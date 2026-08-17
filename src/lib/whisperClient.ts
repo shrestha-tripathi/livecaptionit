@@ -76,15 +76,41 @@ export interface WhisperClient {
 // Model catalog
 // ────────────────────────────────────────────────────────────────────────
 
+/**
+ * v0.7.0 — engine family. Whisper and Moonshine are DIFFERENT model
+ * architectures with different decode contracts:
+ *   - "whisper"  → multilingual (99 langs + auto-detect), accepts the full
+ *     Whisper decode param set (language, task, chunk_length_s, initial_prompt).
+ *   - "moonshine" → English-ONLY, variable-length short-form transcriber. Does
+ *     NOT accept Whisper's language/task/chunk/prompt params. Much lower latency
+ *     on short rolling windows (compute scales with audio length, no 30s pad).
+ * The worker (public/whisper-worker.js) branches on this to pick dtype + the
+ * decode call shape. See SPEC.md v0.7.0.
+ */
+export type ModelFamily = "whisper" | "moonshine";
+
 export interface ModelSpec {
   /** Short key used in UI + localStorage. */
-  id: "tiny" | "base" | "small" | "large-turbo";
+  id:
+    | "tiny"
+    | "base"
+    | "small"
+    | "large-turbo"
+    | "moonshine-tiny"
+    | "moonshine-base";
   /** User-facing label (capitalised). */
   label: string;
   /** Hugging Face model ID. ALL must be onnx-community/* so dtype variants
    *  exist for our WebGPU encoder=fp32 / decoder=q4 config. Using the
    *  Xenova/* port silently hangs (see livecaptionit-project skill notes). */
   hfId: string;
+  /** v0.7.0 — engine family. Drives worker dtype + decode-param selection. */
+  family: ModelFamily;
+  /** v0.7.0 — true = this model only transcribes English. The UI shows an
+   *  "English only" badge and interlocks the language selector (non-English
+   *  pins are disabled while an english-only model is active). Whisper ports
+   *  here are the MULTILINGUAL variants, so they're false. */
+  englishOnly: boolean;
   /** Approximate download size — shown in UI to set expectations. */
   sizeMb: number;
   /** Relative speed multiplier vs base (1.0). Higher = faster. */
@@ -100,34 +126,68 @@ export const AVAILABLE_MODELS: ModelSpec[] = [
     id: "tiny",
     label: "Tiny",
     hfId: "onnx-community/whisper-tiny",
+    family: "whisper",
+    englishOnly: false,
     sizeMb: 39,
     relSpeed: 2.0,
-    hint: "Fastest. Lowest accuracy — best for clean English.",
+    hint: "Fastest Whisper. Lowest accuracy — best for clean speech. Multilingual.",
   },
   {
     id: "base",
     label: "Base",
     hfId: "onnx-community/whisper-base",
+    family: "whisper",
+    englishOnly: false,
     sizeMb: 74,
     relSpeed: 1.0,
-    hint: "Default. Balanced speed and accuracy.",
+    hint: "Default. Balanced speed and accuracy. Multilingual.",
   },
   {
     id: "small",
     label: "Small",
     hfId: "onnx-community/whisper-small",
+    family: "whisper",
+    englishOnly: false,
     sizeMb: 244,
     relSpeed: 0.5,
-    hint: "Best accuracy. Slower + bigger first-time download.",
+    hint: "Best accuracy. Slower + bigger first-time download. Multilingual.",
   },
   {
     id: "large-turbo",
     label: "Large turbo",
     hfId: "onnx-community/whisper-large-v3-turbo",
+    family: "whisper",
+    englishOnly: false,
     sizeMb: 537,
     relSpeed: 0.35,
-    hint: "Top-tier accuracy. ½GB download — first load only, cached after.",
+    hint: "Top-tier accuracy. ½GB download — first load only, cached after. Multilingual.",
     large: true,
+  },
+  // ── v0.7.0 — Moonshine engine family (English-only, ultra-low latency) ──
+  // Moonshine uses variable-length input (no 30s padded window like Whisper),
+  // so it's materially faster + lower-latency on the short rolling audio chunks
+  // a live-caption app feeds it. onnx-community ports have full dtype variants
+  // (encoder fp32/q4 + decoder_model_merged q4), so our WebGPU/WASM configs
+  // "just work" — same as whisper tiny/base. English-ONLY (see englishOnly).
+  {
+    id: "moonshine-tiny",
+    label: "Moonshine Tiny",
+    hfId: "onnx-community/moonshine-tiny-ONNX",
+    family: "moonshine",
+    englishOnly: true,
+    sizeMb: 40,
+    relSpeed: 3.0,
+    hint: "English only. Fastest overall — ultra-low latency, tiny memory. Great on mobile.",
+  },
+  {
+    id: "moonshine-base",
+    label: "Moonshine Base",
+    hfId: "onnx-community/moonshine-base-ONNX",
+    family: "moonshine",
+    englishOnly: true,
+    sizeMb: 85,
+    relSpeed: 2.0,
+    hint: "English only. Fast + more accurate than Moonshine Tiny — low-latency English captions.",
   },
 ];
 
