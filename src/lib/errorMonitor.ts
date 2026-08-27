@@ -4,8 +4,10 @@
  * Console-only telemetry. Buffers up to 50 most-recent errors in
  * sessionStorage so a user can paste a debug dump into a bug report
  * without needing to leave DevTools open from the moment of the
- * incident. Zero network requests; respects AGENTS.md rule 5
- * ("No tracking beyond GA4 page-view count").
+ * incident. Zero network requests from this module; error data never
+ * leaves the browser. Site-wide analytics (GA4) and ad cookies are a
+ * separate, documented concern handled in Layout.astro — nothing from
+ * this buffer is forwarded to them.
  *
  * Auto-installs global handlers when initErrorMonitor() runs:
  *   - window.onerror      → uncaught exceptions
