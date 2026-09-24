@@ -121,6 +121,14 @@ const faqJsonLd = {
     },
     {
       "@type": "Question",
+      name: "Is it AI agent ready (WebMCP)?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: `<p>Yes. In browsers that support WebMCP (<code>navigator.modelContext</code>), ${site.name} exposes three tools to in-browser AI agents: <code>start_captions</code> (optional language and source), <code>stop_captions</code> and <code>get_transcript</code>. Because browsers only allow audio capture after a real click, an agent can prepare the settings but you still click Start and confirm the picker yourself.</p>`,
+      },
+    },
+    {
+      "@type": "Question",
       name: "Can I install it as an app?",
       acceptedAnswer: {
         "@type": "Answer",

@@ -119,6 +119,10 @@ import {
   type TranscriptSegment2,
   type ExportGranularity,
 } from "../lib/transcript";
+import { registerWebMcp } from "../lib/webmcp";
+
+// WebMCP: progressive enhancement, no-op when navigator.modelContext absent.
+registerWebMcp();
 
 type AppState = "idle" | "loading" | "active" | "error";
 
