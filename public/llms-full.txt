@@ -22,6 +22,17 @@ Audio and transcripts are processed on your device. The speech model is download
 - https://livecaptionit.com/lecture-captions/: Captions for lectures and MOOCs
 - https://livecaptionit.com/captions-for-zoom/: Free captions for Zoom (web client)
 - https://livecaptionit.com/captions-for-google-meet/: Captions for Google Meet
+- https://livecaptionit.com/use-cases/: Hub of all use-case guides
+- https://livecaptionit.com/captions-for-microsoft-teams/: Free live captions for Microsoft Teams (web)
+- https://livecaptionit.com/captions-for-webex/: Free live captions for Webex meetings (web app)
+- https://livecaptionit.com/captions-for-twitch-streams/: Live captions for Twitch streams (any channel)
+- https://livecaptionit.com/captions-for-discord-calls/: Live captions for Discord voice channels and calls
+- https://livecaptionit.com/captions-for-online-classes/: Live captions for online classes and webinars
+- https://livecaptionit.com/captions-for-hard-of-hearing/: Live captions for hard-of-hearing users, free and private
+- https://livecaptionit.com/captions-for-deaf-users/: Real-time captions for Deaf users: any tab, on-device
+- https://livecaptionit.com/captions-for-job-interviews/: Live captions for online job interviews
+- https://livecaptionit.com/hindi-live-transcription-for-lectures/: Hindi live transcription for lectures (हिन्दी कैप्शन)
+- https://livecaptionit.com/microphone-live-captions/: Live captions from your microphone for in-person talks
 - https://livecaptionit.com/install/: Install as a PWA
 - https://livecaptionit.com/blog/: Blog
 - https://livecaptionit.com/about/: About

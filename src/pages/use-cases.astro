@@ -1,0 +1,36 @@
+---
+import Layout from "../layouts/Layout.astro";
+import { b } from "../site.config";
+import { pseo } from "../data/pseo";
+
+const existing = [
+  { href: "/captions-for-zoom", label: "Captions for Zoom" },
+  { href: "/captions-for-google-meet", label: "Captions for Google Meet" },
+  { href: "/youtube-captions", label: "YouTube captions" },
+  { href: "/meeting-captions", label: "Web meeting captions" },
+  { href: "/podcast-captions", label: "Podcast captions" },
+  { href: "/lecture-captions", label: "Lecture captions" },
+];
+---
+
+<Layout title="Live caption use cases" description="Guides for using free, on-device live captions with Teams, Webex, Twitch, Discord, online classes, interviews, Hindi lectures and more.">
+  <main class="max-w-3xl mx-auto px-4 sm:px-6 py-12 sm:py-16">
+    <h1 class="text-4xl font-bold tracking-tight mb-4">Live caption use cases</h1>
+    <p class="text-lg text-[var(--color-fg-muted)] mb-8">Step-by-step guides for captioning specific platforms and situations. Every guide uses the same free tool: Whisper running in your browser, captions in a floating window.</p>
+    <ul class="grid sm:grid-cols-2 gap-3">
+      {pseo.map((p) => (
+        <li>
+          <a href={b(`/${p.slug}`)} class="block h-full p-4 rounded-md bg-[var(--color-surface)] shadow-line">
+            <span class="font-semibold text-[var(--color-fg)]">{p.h1}</span>
+            <span class="block mt-1 text-sm text-[var(--color-fg-muted)]">{p.metaDescription}</span>
+          </a>
+        </li>
+      ))}
+      {existing.map((e) => (
+        <li>
+          <a href={b(e.href)} class="block h-full p-4 rounded-md bg-[var(--color-surface)] shadow-line font-semibold text-[var(--color-fg)]">{e.label}</a>
+        </li>
+      ))}
+    </ul>
+  </main>
+</Layout>

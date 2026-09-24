@@ -1,0 +1,103 @@
+---
+import Layout from "../layouts/Layout.astro";
+import { site, b } from "../site.config";
+import { pseo, pseoBySlug, type PseoEntry } from "../data/pseo";
+
+export function getStaticPaths() {
+  return pseo.map((p) => ({ params: { slug: p.slug }, props: { entry: p } }));
+}
+
+const { entry } = Astro.props as { entry: PseoEntry };
+const related = entry.related.map(pseoBySlug).filter((r): r is PseoEntry => !!r);
+
+const howToLd = {
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  name: entry.h1,
+  description: entry.metaDescription,
+  step: entry.steps.map((s, i) => ({ "@type": "HowToStep", position: i + 1, name: s.name, text: s.text })),
+};
+const faqLd = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: entry.faqs.map((f) => ({
+    "@type": "Question",
+    name: f.q,
+    acceptedAnswer: { "@type": "Answer", text: f.a },
+  })),
+};
+---
+
+<Layout title={entry.title} description={entry.metaDescription} jsonLd={[howToLd, faqLd]}>
+  <main class="max-w-3xl mx-auto px-4 sm:px-6 py-12 sm:py-16">
+    <p class="text-sm text-[var(--color-fg-muted)] mb-3">
+      <a href={b("/")} class="hover:text-[var(--color-fg)]">{site.name}</a>
+      <span class="mx-1.5">/</span>
+      <a href={b("/use-cases")} class="hover:text-[var(--color-fg)]">Use cases</a>
+    </p>
+    <h1 class="text-4xl sm:text-5xl font-bold tracking-tight mb-4">{entry.h1}</h1>
+    <p class="text-lg text-[var(--color-fg-muted)] mb-8">{entry.intro}</p>
+
+    <div class="mb-12">
+      <a
+        href={b("/")}
+        class="brand-halo inline-flex items-center gap-2 px-6 py-3 rounded-full text-base font-semibold bg-[var(--color-brand)] text-white hover:bg-[var(--color-brand-strong)] transition-colors shadow-line"
+      >Start live captions →</a>
+      <p class="mt-3 text-sm text-[var(--color-fg-muted)]">
+        Free · runs in your browser · audio never uploads
+        {entry.source === "mic" ? " · choose Microphone as the source" : ""}
+        {entry.lang === "hi" ? " · pick हिन्दी under Language" : ""}
+      </p>
+    </div>
+
+    <section class="mb-12">
+      <h2 class="text-2xl font-bold mb-4">Step-by-step</h2>
+      <ol class="space-y-4">
+        {entry.steps.map((s, i) => (
+          <li class="flex gap-4">
+            <span class="shrink-0 size-7 grid place-items-center rounded-full bg-[var(--color-brand)] text-white font-bold text-sm">{i + 1}</span>
+            <div>
+              <p class="font-semibold text-[var(--color-fg)]">{s.name}</p>
+              <p class="mt-1 text-sm text-[var(--color-fg-muted)] leading-relaxed">{s.text}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </section>
+
+    <section class="mb-12">
+      <h2 class="text-2xl font-bold mb-4">Tips and limits</h2>
+      <ul class="space-y-2 list-disc pl-5 text-sm text-[var(--color-fg-muted)] leading-relaxed">
+        {entry.tips.map((t) => <li>{t}</li>)}
+      </ul>
+    </section>
+
+    <section class="mb-12">
+      <h2 class="text-2xl font-bold mb-4">FAQ</h2>
+      <div class="space-y-2">
+        {entry.faqs.map((f) => (
+          <details class="bg-[var(--color-surface)] rounded-md px-4 py-3 shadow-line">
+            <summary class="cursor-pointer font-semibold text-[var(--color-fg)]">{f.q}</summary>
+            <p class="mt-2 text-sm text-[var(--color-fg-muted)]">{f.a}</p>
+          </details>
+        ))}
+      </div>
+    </section>
+
+    <section>
+      <h2 class="text-2xl font-bold mb-4">Related</h2>
+      <ul class="grid sm:grid-cols-2 gap-3">
+        {related.map((r) => (
+          <li>
+            <a href={b(`/${r.slug}`)} class="block p-4 rounded-md bg-[var(--color-surface)] shadow-line hover:text-[var(--color-fg)] text-sm text-[var(--color-fg-muted)]">
+              <span class="font-semibold text-[var(--color-fg)]">{r.h1}</span>
+            </a>
+          </li>
+        ))}
+        <li>
+          <a href={b("/use-cases")} class="block p-4 rounded-md bg-[var(--color-surface)] shadow-line text-sm font-semibold text-[var(--color-fg)]">All use cases →</a>
+        </li>
+      </ul>
+    </section>
+  </main>
+</Layout>
