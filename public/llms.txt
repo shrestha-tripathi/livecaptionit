@@ -1,0 +1,31 @@
+# LiveCaptionIt
+
+> Free, in-browser live captions for any tab or your microphone. Whisper runs locally on your device (WebGPU/WASM); captions float in a Picture-in-Picture window over any app. No upload, no account.
+
+## What it does
+LiveCaptionIt captures audio from a browser tab (via the screen-share picker with "Share tab audio") or from your microphone, transcribes it with OpenAI Whisper running locally through transformers.js, and shows real-time captions in the page or in a floating Document Picture-in-Picture window. Transcripts can be exported (TXT/SRT/VTT) or shared via a self-contained URL.
+
+## Privacy
+Audio and transcripts are processed on your device. The speech model is downloaded once (~75 MB for the default model) and cached by the browser. Nothing is uploaded to a server. The marketing site uses GA4 page-view analytics only.
+
+## Limits
+- Works best in desktop Chrome, Edge or Brave (tab audio capture + Document PiP). Firefox/Safari support is partial.
+- Can only caption audio the browser can hear: desktop apps (e.g. native Zoom/Teams) must be joined in the browser, or use microphone mode.
+- Accuracy depends on audio quality, the chosen model and language; it is not a certified CART service.
+- Supports 16 languages in the picker (incl. English, Hindi, Spanish, French, German, Japanese, Chinese, Arabic) plus auto-detect.
+
+## Pages
+- https://livecaptionit.com/: The live captions tool
+- https://livecaptionit.com/youtube-captions/: Captions for YouTube and other video tabs
+- https://livecaptionit.com/meeting-captions/: Captions for browser-based web meetings
+- https://livecaptionit.com/podcast-captions/: Captions for podcasts
+- https://livecaptionit.com/lecture-captions/: Captions for lectures and MOOCs
+- https://livecaptionit.com/captions-for-zoom/: Free captions for Zoom (web client)
+- https://livecaptionit.com/captions-for-google-meet/: Captions for Google Meet
+- https://livecaptionit.com/install/: Install as a PWA
+- https://livecaptionit.com/blog/: Blog
+- https://livecaptionit.com/about/: About
+- https://livecaptionit.com/privacy/: Privacy policy
+
+## Optional
+- https://livecaptionit.com/llms-full.txt: Full FAQ text

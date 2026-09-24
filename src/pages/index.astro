@@ -150,6 +150,12 @@ const faqJsonLd = {
       <p class="mt-5 text-lg text-[var(--color-fg-muted)] max-w-xl mx-auto">
         Caption a YouTube video, a podcast, a web meeting — anything your browser can hear. The captions pop into a floating window that stays on top no matter what app you switch to.
       </p>
+      <div class="mt-6 text-left bg-[var(--color-surface)] rounded-xl p-4 shadow-line max-w-xl mx-auto">
+        <p class="text-sm text-[var(--color-fg-muted)]">
+          <strong class="text-[var(--color-fg)]">TL;DR:</strong> {site.name} is a free live-captions tool that runs entirely in your browser. It transcribes tab audio or your microphone with Whisper on your own device (no upload, no account) and shows captions in a floating picture-in-picture window. Limit: best in desktop Chrome/Edge; desktop meeting apps must be joined in the browser.
+        </p>
+        <p class="mt-2 text-sm text-[var(--color-fg-muted)]">Last updated {site.lastUpdatedLabel}</p>
+      </div>
     </section>
 
     {/* ─── The actual tool ─── */}

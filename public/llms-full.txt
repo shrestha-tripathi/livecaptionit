@@ -1,0 +1,78 @@
+# LiveCaptionIt
+
+> Free, in-browser live captions for any tab or your microphone. Whisper runs locally on your device (WebGPU/WASM); captions float in a Picture-in-Picture window over any app. No upload, no account.
+
+## What it does
+LiveCaptionIt captures audio from a browser tab (via the screen-share picker with "Share tab audio") or from your microphone, transcribes it with OpenAI Whisper running locally through transformers.js, and shows real-time captions in the page or in a floating Document Picture-in-Picture window. Transcripts can be exported (TXT/SRT/VTT) or shared via a self-contained URL.
+
+## Privacy
+Audio and transcripts are processed on your device. The speech model is downloaded once (~75 MB for the default model) and cached by the browser. Nothing is uploaded to a server. The marketing site uses GA4 page-view analytics only.
+
+## Limits
+- Works best in desktop Chrome, Edge or Brave (tab audio capture + Document PiP). Firefox/Safari support is partial.
+- Can only caption audio the browser can hear: desktop apps (e.g. native Zoom/Teams) must be joined in the browser, or use microphone mode.
+- Accuracy depends on audio quality, the chosen model and language; it is not a certified CART service.
+- Supports 16 languages in the picker (incl. English, Hindi, Spanish, French, German, Japanese, Chinese, Arabic) plus auto-detect.
+
+## Pages
+- https://livecaptionit.com/: The live captions tool
+- https://livecaptionit.com/youtube-captions/: Captions for YouTube and other video tabs
+- https://livecaptionit.com/meeting-captions/: Captions for browser-based web meetings
+- https://livecaptionit.com/podcast-captions/: Captions for podcasts
+- https://livecaptionit.com/lecture-captions/: Captions for lectures and MOOCs
+- https://livecaptionit.com/captions-for-zoom/: Free captions for Zoom (web client)
+- https://livecaptionit.com/captions-for-google-meet/: Captions for Google Meet
+- https://livecaptionit.com/install/: Install as a PWA
+- https://livecaptionit.com/blog/: Blog
+- https://livecaptionit.com/about/: About
+- https://livecaptionit.com/privacy/: Privacy policy
+
+## Optional
+- https://livecaptionit.com/llms-full.txt: Full FAQ text
+
+## FAQ
+
+### How is this different from Chrome's built-in Live Caption?
+Chrome's Live Caption is system-only — it doesn't float over other apps and can't show captions in a picture-in-picture window. LiveCaptionIt pops the captions into a floating window that stays visible no matter which app you're using, and works on multiple operating systems (Chrome's Live Caption availability varies by OS).
+
+### Does my audio get uploaded anywhere?
+No. LiveCaptionIt runs the speech-recognition model — Whisper (multilingual) or Moonshine (a faster, English-only option) — directly in your browser via WebGPU and transformers.js. Audio is processed on your device and never sent to any server. The only network requests are the one-time download of the model file from Hugging Face Hub, cached locally afterward.
+
+### Does it store anything?
+LiveCaptionIt stores your last 20 caption transcripts locally in your browser (IndexedDB) so you can revisit and re-download them from the "Recent sessions" panel on the home page. Only the text is stored — never the raw audio. Click "Clear all" anytime to wipe history. Nothing ever leaves your device. Your model preference, caption style, and PiP window size are also saved (localStorage) for convenience.
+
+### Can I try it without picking a tab or granting microphone access?
+Yes. Click "Try with sample audio · no setup" on the home page. It plays a short bundled audio clip through the same pipeline that captions your real audio — no permission prompts. Useful to see how the rolling-window captions feel, judge whether your chosen model tier (tiny / base / small / large turbo) is fast enough on your device, or just confirm everything works before you commit to picking a tab.
+
+### Which browsers are supported?
+Tab/screen capture mode needs Chrome, Edge, or Brave 116+ on desktop. Microphone-only mode works in all modern browsers (Firefox + Safari included) including mobile — point your phone's mic at any audio source. The floating picture-in-picture window is Chromium-only desktop for now. On mobile, captions appear inline on the page instead.
+
+### How fast are the captions?
+The first word usually appears within ~700ms of speech. LiveCaptionIt uses a rolling-window streaming transcriber: instead of waiting for fixed 3-second chunks, it re-transcribes the recent audio every ~700ms and shows confident words bold + uncertain words muted. Words "solidify in place" as the model becomes confident. Feels like Live Caption / YouTube CC rather than delayed subtitles.
+
+### Can I choose between speed and accuracy?
+Yes. The Whisper model picker on the home page lets you choose Tiny (39 MB, ~2x faster), Base (74 MB, default — balanced), Small (244 MB, ~10% more accurate but slower), or Large turbo (537 MB, top-tier accuracy — recommended only when smaller tiers can't keep up with your audio). Each model is cached in your browser after the first download. Pick whichever matches your machine + audio quality.
+
+### Can I download the transcript?
+Yes. After you click Stop, three download buttons appear: .txt (plain text), .vtt (WebVTT, for video players that support subtitles), and .srt (SubRip, the universal subtitle format). Timestamps are at segment level (~700-1200ms granularity) — good enough for most use cases, not for frame-perfect subtitle alignment.
+
+### Can I use my microphone instead of a tab?
+Yes. Toggle the "Microphone" source on the home page instead of "Tab / window". Useful for dictation, voice notes, recording your own speech for podcast prep, or captioning a meeting where you are the speaker. LiveCaptionIt disables the browser's echo cancellation and auto-gain control for microphone mode so Whisper sees the raw audio.
+
+### Can I customize the caption look?
+Yes. The "Caption style" panel on the home page lets you adjust font size (80-200%), base font weight (regular / medium / bold), caption position in the floating window (top / middle / bottom), and the text-shadow that boosts legibility when the window sits over bright video. All settings apply live and persist in your browser.
+
+### Can it caption audio from a desktop app like Zoom or Spotify?
+On Windows: yes, if you pick "Entire screen" in the source picker and your browser is allowed to capture system audio (Chrome and Edge support this). On macOS and Linux, the browser can only capture audio from another browser tab — so use Zoom Web or Spotify Web instead. macOS users can install BlackHole (free virtual audio device) to route desktop app audio into the browser if needed.
+
+### Can it tell who is speaking? (speaker diarization)
+Not yet — and honestly, it's harder than it sounds in a browser. When you capture a tab, every speaker arrives as one mono audio stream at similar volume, so distinguishing "Speaker A" from "Speaker B" needs a separate voice-fingerprinting model (~300MB) that we haven't shipped to keep LiveCaptionIt fast and lightweight. What we DO ship: turn detection — if there's silence for ≥1.5s, captions start a fresh paragraph, which reads like meeting notes (one paragraph ≈ one person's turn) even without naming the speakers. Real diarization is on the v0.5+ roadmap.
+
+### Can I teach it words it usually mishears?
+Yes. The "Custom vocabulary" panel on the home page lets you list proper nouns, technical terms, or names you want preserved (e.g. kubectl, NeurIPS, Aishwarya, ₹ ). They're fed to Whisper as an initial prompt so the decoder is primed to recognize them with correct spelling and casing. Up to 200 characters. Works for any language Whisper supports.
+
+### Can I share a transcript with someone without uploading it?
+Yes. After Stop, click the Share button next to the download options. LiveCaptionIt gzip-compresses the transcript and packs it into the URL itself (no upload, no server) — your friend opens the link and sees the full session viewer with all download options. Works for transcripts up to ~16 KB (a few minutes of speech); longer sessions get a "use Export instead" toast.
+
+### Can I install it as an app?
+Yes. LiveCaptionIt is a Progressive Web App — Chrome, Edge, and Brave show an install pill on the home page that adds it to your Start menu / Applications / Home Screen. On iOS Safari, use Share → Add to Home Screen. Installed mode opens in its own window (no browser chrome), which makes the floating PiP feel like a native overlay app.
