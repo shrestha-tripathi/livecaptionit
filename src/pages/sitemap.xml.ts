@@ -1,6 +1,7 @@
 import type { APIRoute } from "astro";
 import { getCollection } from "astro:content";
 import { site, absoluteUrl } from "../site.config";
+import { pseo } from "../data/pseo";
 
 interface RouteEntry {
   path: string;
@@ -21,6 +22,10 @@ const staticRoutes: RouteEntry[] = [
   // Platform landing pages
   { path: "/captions-for-zoom", priority: 0.8, changefreq: "monthly" },
   { path: "/captions-for-google-meet", priority: 0.8, changefreq: "monthly" },
+
+  // Programmatic use-case pages
+  { path: "/use-cases", priority: 0.7, changefreq: "monthly" },
+  ...pseo.map((p) => ({ path: `/${p.slug}`, priority: 0.7, changefreq: "monthly" as const })),
 
   // Install + blog index
   { path: "/install", priority: 0.7, changefreq: "monthly" },
