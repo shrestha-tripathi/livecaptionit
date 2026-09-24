@@ -51,6 +51,10 @@ export const site = {
    * Set to "" to disable analytics entirely.
    */
   gaId: env.PUBLIC_GA_MEASUREMENT_ID ?? "G-XZPZ13FET6",
+  /** Freshness: ISO date for JSON-LD dateModified + visible "Last updated". */
+  lastUpdated: "2026-09-24",
+  lastUpdatedLabel: "September 2026",
+  publisherUrl: "https://worksoffline.in",
 } as const;
 
 export type SiteConfig = typeof site;

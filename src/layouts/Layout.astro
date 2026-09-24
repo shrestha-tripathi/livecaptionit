@@ -46,6 +46,28 @@ const baseJsonLd = [
     publisher: { "@id": `${site.url}/#organization` },
     inLanguage: site.locale,
   },
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "@id": `${site.url}/#app`,
+    name: site.name,
+    url: site.url,
+    description: site.description,
+    applicationCategory: "AccessibilityApplication",
+    operatingSystem: "Any (web browser)",
+    browserRequirements: "Chrome, Edge or Brave recommended (tab-audio capture + Document Picture-in-Picture)",
+    isAccessibleForFree: true,
+    offers: [
+      { "@type": "Offer", price: "0", priceCurrency: "USD" },
+      { "@type": "Offer", price: "0", priceCurrency: "INR" },
+    ],
+    dateModified: site.lastUpdated,
+    publisher: {
+      "@type": "Organization",
+      name: "WorksOffline",
+      url: site.publisherUrl,
+    },
+  },
 ];
 
 // Auto-breadcrumb for every non-home page: Home → <title>. Derived from the
